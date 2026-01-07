@@ -11,6 +11,28 @@ export interface ModelCapabilities {
 export class OllamaCapabilityService {
 
     /**
+     * Checks currently loaded models and their hardware utilization.
+     */
+    async getHardwareStatus(baseUrl: string): Promise<any[]> {
+        try {
+            let root = baseUrl
+            if (root.includes("/v1")) root = root.replace(/\/v1\/?$/, "")
+            if (root.includes("/api/chat")) root = root.replace(/\/api\/chat$/, "")
+            if (root.endsWith("/")) root = root.slice(0, -1)
+
+            const url = `${root}/api/ps`
+            const response = await fetch(url)
+            if (!response.ok) return []
+
+            const data = await response.json()
+            return data.models || []
+        } catch (e) {
+            console.error("🔍 Hardware Status Error", e)
+            return []
+        }
+    }
+
+    /**
      * Inspects a model via Ollama's /api/show endpoint.
      * Returns capabilities or defaults if inspection fails.
      */
@@ -68,6 +90,5 @@ export class OllamaCapabilityService {
         return "tier1"
     }
 }
-
 
 export const ollamaInspector = new OllamaCapabilityService()

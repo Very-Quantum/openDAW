@@ -13,7 +13,8 @@ import {
     TrackType,
     NanoDeviceBoxAdapter,
     PlayfieldDeviceBoxAdapter,
-    SoundfontDeviceBoxAdapter
+    SoundfontDeviceBoxAdapter,
+    AutomatableParameterFieldAdapter
 } from "@opendaw/studio-adapters"
 import { Interpolation, PPQN } from "@opendaw/lib-dsp"
 import {
@@ -178,7 +179,7 @@ export class OdieAppControl {
                     name,
                     IconSymbol.AudioBus,
                     AudioUnitType.Bus,
-                    new Color(210, 66, 59) // #4a90e2 (HSL: 210, 66%, 59%)
+                    new Color(74, 144, 226) // #4a90e2 (HSL: 210, 66%, 59%)
                 )
             })
 
@@ -195,10 +196,8 @@ export class OdieAppControl {
         return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
             some: async (sourceAdapter) => {
                 if (sourceAdapter.isBus) {
-                    // Technically possible via sidechain? But for now restrict sends to regular tracks as source
                     return { success: false, reason: "Source must be a regular track" }
                 }
-                // Find Dest (Aux Bus) directly
                 const root = this.studio.project.rootBoxAdapter
                 const targetBusAdapter = root.audioBusses.adapters().find(a => a.labelField.getValue() === auxName)
 
@@ -210,17 +209,14 @@ export class OdieAppControl {
                     this.studio.project.editing.modify(() => {
                         AuxSendBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
                             box.audioUnit.refer(sourceAdapter.box.auxSends)
-                            // box.routing.setValue(0) // Default is likely correct/safe. avoiding "Already set".
                             box.sendGain.setValue(db)
                             box.targetBus.refer(targetBusAdapter.box.input)
-                            // Ensure index is set correctly (append)
                             const currentAuxSends = sourceAdapter.auxSends.adapters()
                             box.index.setValue(currentAuxSends.length)
                         })
                     })
                     this.studio.odieEvents.notify({ type: "effect-added", track: trackName, effect: "send" })
                     return { success: true }
-
                 } catch (e: unknown) {
                     const msg = e instanceof Error ? e.message : String(e)
                     return { success: false, reason: `addSend failed: ${msg}` }
@@ -1111,7 +1107,7 @@ export class OdieAppControl {
         return `[VERIFICATION REPORT]\nAction: ${action}\nExpected: ${expected}\n\n[CURRENT RAW GRAPH]:\n${rawState}`
     }
 
-    private findAudioUnitAdapter(name: string): Option<AudioUnitBoxAdapter> {
+    public findAudioUnitAdapter(name: string): Option<AudioUnitBoxAdapter> {
         if (!this.studio.hasProfile) return Option.None
         const root = this.studio.project.rootBoxAdapter
         const allAdapters = [
@@ -1146,6 +1142,75 @@ export class OdieAppControl {
             return Option.wrap(match.audioUnitBoxAdapter())
         }
         return Option.wrap(match as AudioUnitBoxAdapter)
+    }
+
+    /**
+     * Resolves a parameter path (e.g. "Kick/volume" or "Kick/Reverb/mix") to a real parameter adapter.
+     * Used by GenUI to bind AI-generated knobs to actual engine parameters.
+     */
+    public resolveParameter(path: string): AutomatableParameterFieldAdapter<number> | null {
+        try {
+            const parts = path.split('/')
+            // If only 1 part ("volume"), assume selected track? No, too dangerous. Require Track/Param.
+            // Exception: Master track params maybe?
+            if (parts.length < 2) return null
+
+            const trackName = parts[0]
+            const tail = parts.slice(1)
+
+            let trackAdapter: any = null
+            this.findAudioUnitAdapter(trackName).match({
+                some: (a) => { trackAdapter = a },
+                none: () => { }
+            })
+
+            if (!trackAdapter) return null
+
+            // Case A: Track Parameter (e.g. "Kick/volume")
+            if (tail.length === 1) {
+                const paramName = tail[0].toLowerCase()
+                // 1. Standard Parameters (via namedParameter if available)
+                if (trackAdapter.namedParameter) {
+                    if (paramName === 'volume') return trackAdapter.namedParameter.volume
+                    if (paramName === 'pan' || paramName === 'panning') return trackAdapter.namedParameter.pan
+                    if (paramName === 'mute') return trackAdapter.namedParameter.mute
+                    if (paramName === 'solo') return trackAdapter.namedParameter.solo
+                }
+                // 2. Direct Property fallback
+                if (trackAdapter[paramName] && typeof trackAdapter[paramName].setValue === 'function') {
+                    return trackAdapter[paramName]
+                }
+                return null
+            }
+
+            // Case B: Device Parameter (e.g. "Kick/Reverb/mix")
+            if (tail.length >= 2) {
+                const deviceName = tail[0]
+                const paramName = tail[1]
+
+                // Search Audio Effects
+                const effects = trackAdapter.audioEffects?.adapters() || []
+                const foundEffect = effects.find((eff: any) => {
+                    const label = eff.label?.getValue ? eff.label.getValue() : eff.label
+                    return (label && label.includes(deviceName)) || eff.name === deviceName
+                })
+
+                if (foundEffect) {
+                    // Try direct property access on effect adapter
+                    if (foundEffect[paramName]) return foundEffect[paramName]
+
+                    // Try 'namedParameter' on effect?
+                    if (foundEffect.namedParameter && foundEffect.namedParameter[paramName]) {
+                        return foundEffect.namedParameter[paramName]
+                    }
+                }
+            }
+
+            return null
+        } catch (e) {
+            console.error("[OdieAppControl] resolveParameter failed", e)
+            return null
+        }
     }
 
     private findRegion(trackName: string, time: number): Option<AnyRegionBoxAdapter> {
@@ -1438,13 +1503,7 @@ export class OdieAppControl {
 
                     if (deviceType === "midiEffect") {
                         const effects = adapter.midiEffects.adapters()
-                        if (deviceIndex >= effects.length) {
-                            return { success: false, reason: `MIDI effect index ${deviceIndex} out of range (have ${effects.length})` }
-                        }
 
-                        if (deviceIndex < 0 || deviceIndex >= effects.length) {
-                            return { success: false, reason: `MIDI Effect index ${deviceIndex} out of range` }
-                        }
 
                         const effectAdapter = effects[deviceIndex]
 
@@ -1743,8 +1802,8 @@ export class OdieAppControl {
             some: async (adapter) => {
                 // 1. Convert 1-based Bars to PPQN
                 // Assuming 4/4 signature for simplified logic, or use PPQN helper
-                const ppqnStart = (start - 1) * 4 * PPQN.Quarter
-                const ppqnDuration = duration * 4 * PPQN.Quarter
+                const ppqnStart = (start - 1) * 4
+                const ppqnDuration = duration * 4
 
                 // 2. Find Target Region
                 // We use our helper findRegion (which expects PPQN)

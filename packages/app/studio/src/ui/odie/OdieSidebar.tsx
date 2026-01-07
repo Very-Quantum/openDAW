@@ -117,7 +117,7 @@ export const OdieSidebar = (props: { service: StudioService, lifecycle: Terminat
                     overlay = OdieModalFrame({
                         title: "System Config",
                         icon: "⚙️",
-                        width: "800px",
+                        width: "1100px",
                         onClose: close,
                         children: settingsContent
                     })

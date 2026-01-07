@@ -74,7 +74,7 @@ export class OdieService {
 
             // Auto-Open if wizard not done
             if (!this.ai.wizardCompleted.getValue()) {
-                // this.toggle() // Maybe too aggressive? Let user click.
+                setTimeout(() => this.visible.setValue(true), 1000) // Small delay to ensure UI ready
             }
 
             // Auto-Save History

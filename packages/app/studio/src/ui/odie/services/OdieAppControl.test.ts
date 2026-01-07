@@ -120,4 +120,24 @@ describe('OdieAppControl (The Nervous System)', () => {
         })
     })
 
+    describe('The Nervous System (GenUI Resolution)', () => {
+        it('should resolve Track VOLUME', async () => {
+            mockStudio.addFakeTrack("Kick")
+            const adapter = odie.resolveParameter("Kick/volume")
+            expect(adapter).toBeDefined()
+            expect(adapter?.getValue()).toBe(0.0)
+        })
+
+        it('should resolve Track PAN', async () => {
+            mockStudio.addFakeTrack("Snare")
+            const adapter = odie.resolveParameter("Snare/pan")
+            expect(adapter).toBeDefined()
+        })
+
+        it('should return null for unknown track', async () => {
+            const adapter = odie.resolveParameter("Ghost/volume")
+            expect(adapter).toBeNull()
+        })
+    })
+
 })

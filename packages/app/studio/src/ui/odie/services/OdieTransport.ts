@@ -66,9 +66,10 @@ export class OdieTransport {
     setBpm(bpm: number): boolean {
         if (!this.studio.hasProfile) return false
 
-        // Strict Range Validation
-        if (bpm < 20 || bpm > 999) {
-            console.warn(`[OdieTransport] BPM ${bpm} out of valid range (20-999). Rejecting.`)
+        // Strict Range & Safety Validation
+        // [ANTI-HAL] Protect against LLM returning "fast" (NaN) or Infinity
+        if (!Number.isFinite(bpm) || bpm < 20 || bpm > 999) {
+            console.warn(`[OdieTransport] BPM ${bpm} is invalid (NaN or out of range 20-999). Rejecting.`)
             return false
         }
 
@@ -91,7 +92,12 @@ export class OdieTransport {
     setTimeSignature(numerator: number, denominator: number): boolean {
         if (!this.studio.hasProfile) return false
 
-        // Range Safety
+        // Range Safety & NaN Check
+        if (!Number.isFinite(numerator) || !Number.isFinite(denominator)) {
+            console.warn(`[OdieTransport] Time Signature ${numerator}/${denominator} contains NaN. Rejecting.`)
+            return false
+        }
+
         const n = Math.max(1, Math.min(numerator, 32))
         const d = Math.max(1, Math.min(denominator, 32))
 

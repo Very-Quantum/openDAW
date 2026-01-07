@@ -63,13 +63,20 @@ export class MockStudioService {
             isAttached: () => true,
         }
 
-        const fakeAdapter: MockAdapter = {
+        const fakeAdapter: MockAdapter & { namedParameter: any } = {
             box: fakeBox,
             input: {
                 label: {
                     unwrapOrElse: () => name,
                     getValue: () => name
                 }
+            },
+            namedParameter: {
+                volume: fakeBox.volume,
+                pan: fakeBox.panning,
+                panning: fakeBox.panning,
+                mute: fakeBox.mute,
+                solo: fakeBox.solo
             }
         }
 

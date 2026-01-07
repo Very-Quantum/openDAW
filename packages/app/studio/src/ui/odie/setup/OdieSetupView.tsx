@@ -119,8 +119,7 @@ export const OdieSetupView = ({ service }: { service: OdieService }) => {
         } catch (e: any) {
             console.error(e)
             scanStatus.setValue("Not Found")
-            const msg = e.toString()
-            if (msg.includes("Failed to fetch") || msg.includes("NetworkError")) {
+            if (e instanceof TypeError && (e.message.includes("Failed to fetch") || e.message.includes("NetworkError"))) {
                 ollamaErrorType.setValue("cors")
             } else {
                 ollamaErrorType.setValue("missing")
@@ -316,8 +315,8 @@ export const OdieSetupView = ({ service }: { service: OdieService }) => {
                 {[
                     { icon: <IconSliders />, title: "The Operator", desc: "Control the studio.", examples: ["Set BPM to 128", "Export mixdown"] },
                     { icon: <IconMusic />, title: "The Creative", desc: "Musical collaborator.", examples: ["Give me chord ideas", "Write lyrics"] }
-                ].map((card: any) => (
-                    <div className="wizard-card">
+                ].map((card: any, i: number) => (
+                    <div className="wizard-card" key={i}>
                         <div className="card-icon">{card.icon}</div>
                         <h3>{card.title}</h3>
                         <p>{card.desc}</p>
@@ -354,7 +353,7 @@ export const OdieSetupView = ({ service }: { service: OdieService }) => {
                             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
                                 <div className="form-group">
                                     <label>My Name Is</label>
-                                    <TextInput lifecycle={lifecycle} model={nameModel} />
+                                    <TextInput lifecycle={lifecycle} model={nameModel} placeholder="Simon LeBon" />
                                 </div>
 
                                 <Button lifecycle={lifecycle}
@@ -435,7 +434,7 @@ export const OdieSetupView = ({ service }: { service: OdieService }) => {
                                             <div style={{ maxWidth: "600px" }}>
                                                 <div className="form-group">
                                                     <label>Name / Alias</label>
-                                                    <TextInput lifecycle={lifecycle} model={nameModel} />
+                                                    <TextInput lifecycle={lifecycle} model={nameModel} placeholder="Simon LeBon" />
                                                 </div>
 
                                                 <div className="form-group">
@@ -469,7 +468,7 @@ export const OdieSetupView = ({ service }: { service: OdieService }) => {
                                                     <input type="text"
                                                         value={dna.identity.location}
                                                         onChange={(e: any) => userService.update({ identity: { ...dna.identity, location: e.target.value } })}
-                                                        placeholder="Where are you based?"
+                                                        placeholder="Planet Earth"
                                                         style={{ width: "100%", padding: "8px", background: "var(--color-bg-3)", border: "1px solid var(--color-edge)", color: "white", borderRadius: "4px" }}
                                                     />
                                                 </div>
@@ -496,14 +495,14 @@ export const OdieSetupView = ({ service }: { service: OdieService }) => {
                                                     <label>Vibe Keywords</label>
                                                     <input type="text" value={dna.sonicFingerprint.vibeKeywords.join(", ")}
                                                         placeholder="Use comma separated list..."
-                                                        onChange={(e: any) => userService.update({ sonicFingerprint: { ...dna.sonicFingerprint, vibeKeywords: e.target.value.split(",").map((s: string) => s.trim()) } })}
+                                                        onChange={(e: any) => userService.update({ sonicFingerprint: { ...dna.sonicFingerprint, vibeKeywords: e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean) } })}
                                                     />
                                                 </div>
                                                 <div className="form-group">
                                                     <label>Key Influences</label>
                                                     <input type="text" value={dna.influences.join(", ")}
                                                         placeholder="Daft Punk, Hans Zimmer..."
-                                                        onChange={(e: any) => userService.update({ influences: e.target.value.split(",").map((s: string) => s.trim()) })}
+                                                        onChange={(e: any) => userService.update({ influences: e.target.value.split(",").map((s: string) => s.trim()).filter(Boolean) })}
                                                         style={{ width: "100%", padding: "8px", background: "var(--color-bg-3)", border: "1px solid var(--color-edge)", color: "white", borderRadius: "4px" }}
                                                     />
                                                 </div>

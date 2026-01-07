@@ -46,7 +46,6 @@ Odie reads this **Passport** before every single reply. If you ask for a "Drum K
 | :--- | :--- | :--- |
 | **App Control** | Manipulate tracks, transport, and plugins. | "Add a track", "Play", "Split" |
 | **GenUI** | Visual widgets (Tables, Knobs) rendered in chat. | "Compare synths", "Set threshold" |
-| **Academy** | Interactive lessons and theory guides. | "Teach me compression" |
 | **Art** | Generative cover art and mood boards. | "Generate an image of..." |
 
 ---

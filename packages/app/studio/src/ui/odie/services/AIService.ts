@@ -10,7 +10,7 @@ const STORAGE_KEY_ACTIVE = "odie_provider_active" // [FIX] Uniform Key
 
 export class AIService {
     readonly providers: LLMProvider[] = []
-    readonly activeProviderId = new DefaultObservableValue<string>("gemini")
+    readonly activeProviderId = new DefaultObservableValue<string>("gemini-3")
     readonly wizardCompleted = new DefaultObservableValue<boolean>(false)
 
     // The Brain
@@ -166,11 +166,15 @@ ${ODIE_MOLECULAR_KNOWLEDGE}
             }
 
             const active = localStorage.getItem(STORAGE_KEY_ACTIVE)
-            if (active && this.providers.find(p => p.id === active)) {
+            if (active === "gemini") {
+                console.log("Migrating legacy 'gemini' ID to 'gemini-3'")
+                this.activeProviderId.setValue("gemini-3")
+                localStorage.setItem(STORAGE_KEY_ACTIVE, "gemini-3")
+            } else if (active && this.providers.find(p => p.id === active)) {
                 this.activeProviderId.setValue(active)
             } else {
-                // [ANTIGRAVITY] Default to Gemini for new users (Local is power-user option)
-                this.activeProviderId.setValue("gemini")
+                // [ANTIGRAVITY] Default to Gemini 3 for new users
+                this.activeProviderId.setValue("gemini-3")
             }
 
             // AUTO-MIGRATION: Fix Mixed Content and Path issues for existing users

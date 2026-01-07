@@ -1,4 +1,5 @@
 import { createElement } from "@opendaw/lib-jsx"
+import { AutomatableParameterFieldAdapter } from "@opendaw/studio-adapters"
 import { VisualKnob } from "./components/VisualKnob"
 import { Svg } from "@opendaw/lib-dom"
 import { PI_HALF, TAU } from "@opendaw/lib-std"
@@ -33,7 +34,7 @@ const ComparisonTable = ({ data }: WidgetProps<{ headers: string[], rows: string
 }
 
 // [A2UI] Interactive Smart Knob with Drag Control
-const SmartKnob = ({ data, onAction }: WidgetProps<{
+const SmartKnob = ({ data, onAction, adapter }: WidgetProps<{
     label: string,
     param: string,
     trackName?: string,
@@ -44,9 +45,11 @@ const SmartKnob = ({ data, onAction }: WidgetProps<{
     deviceType?: string,
     deviceIndex?: number,
     paramPath?: string
-}> & { onAction?: (action: any) => void, key?: any }) => {
+}> & { onAction?: (action: any) => void, key?: any, adapter?: AutomatableParameterFieldAdapter<number> }) => {
     // Local state for drag interaction
-    let localValue = data.value !== undefined ? data.value : 0.5
+    // If adapter exists, prefer its current value
+    const initialValue = (adapter && typeof adapter.getValue === 'function') ? adapter.getValue() : (data.value !== undefined ? data.value : 0.5)
+    let localValue = initialValue
 
     // Normalize to 0-1 for the VisualKnob
     const min = data.min !== undefined ? data.min : 0
@@ -89,6 +92,11 @@ const SmartKnob = ({ data, onAction }: WidgetProps<{
         let newValue = startValue + deltaY * sensitivity
         newValue = Math.max(data.min, Math.min(data.max, newValue))
         localValue = newValue
+
+        // Live Binding: Write to adapter if available
+        if (adapter && typeof adapter.setValue === 'function') {
+            adapter.setValue(localValue)
+        }
 
         const knobContainer = (e.target as HTMLElement).closest('.odie-widget-knob')
         if (!knobContainer) return
@@ -298,7 +306,7 @@ const MidiGrid = ({ data }: WidgetProps<{ notes: { pitch: number, time: number, 
     )
 }
 
-const ControlGrid = ({ data, onAction }: WidgetProps<{ title?: string, controls: any[] }> & { onAction?: (action: any) => void }) => {
+const ControlGrid = ({ data, onAction, resolver }: WidgetProps<{ title?: string, controls: any[] }> & { onAction?: (action: any) => void, resolver?: (target: string) => any }) => {
     // Generate a unique ID for this grid to target it for status updates
     const gridId = `control-grid-${crypto.randomUUID()}`
 
@@ -321,24 +329,32 @@ const ControlGrid = ({ data, onAction }: WidgetProps<{ title?: string, controls:
                 gap: "8px",
                 justifyContent: "center",
             }}>
-                {data.controls.map((ctrl, i) => (
-                    <SmartKnob
-                        key={i}
-                        data={ctrl}
-                        onAction={(action) => {
-                            // Inject the gridId into the action context so the service knows where to send the toast
-                            if (onAction) {
-                                onAction({
-                                    ...action,
-                                    context: {
-                                        ...action.context,
-                                        _targetGridId: gridId
-                                    }
-                                })
-                            }
-                        }}
-                    />
-                ))}
+                {data.controls.map((ctrl, i) => {
+                    let adapter: AutomatableParameterFieldAdapter<number> | undefined
+                    if (resolver && ctrl.param) {
+                        const found = resolver(ctrl.param)
+                        if (found) adapter = found
+                    }
+                    return (
+                        <SmartKnob
+                            key={i}
+                            adapter={adapter}
+                            data={ctrl}
+                            onAction={(action) => {
+                                // Inject the gridId into the action context so the service knows where to send the toast
+                                if (onAction) {
+                                    onAction({
+                                        ...action,
+                                        context: {
+                                            ...action.context,
+                                            _targetGridId: gridId
+                                        }
+                                    })
+                                }
+                            }}
+                        />
+                    )
+                })}
             </div>
 
             {/* Ghost Status Toast Area */}
@@ -585,13 +601,19 @@ export const OdieRenderEngine = {
         return (widget as OdieWidgetPayload) || null
     },
 
-    render(payload: OdieWidgetPayload, onAction?: (action: any) => void) {
+    render(payload: OdieWidgetPayload, onAction?: (action: any) => void, resolver?: (target: string) => any) {
         switch (payload.component) {
             case "comparison_table": return <ComparisonTable data={payload.data} />
             case "smart_knob":
-                return <SmartKnob data={payload.data} onAction={onAction} />
+                // [ANTIGRAVITY] Bind to real parameter if resolver exists
+                let adapter: AutomatableParameterFieldAdapter<number> | undefined
+                if (resolver) {
+                    const found = resolver(payload.data.param)
+                    if (found) adapter = found
+                }
+                return <SmartKnob data={payload.data} onAction={onAction} adapter={adapter} />
             case "control_grid":
-                return <ControlGrid data={payload.data} onAction={onAction} />
+                return <ControlGrid data={payload.data} onAction={onAction} resolver={resolver} />
             case "step_list":
                 return <StepList data={payload.data} onAction={onAction} />
             case "midi_grid": return <MidiGrid data={payload.data} />

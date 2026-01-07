@@ -1,7 +1,7 @@
-import {Events, Html} from "@opendaw/lib-dom"
+import { Events, Html } from "@opendaw/lib-dom"
 import css from "./TextInput.sass?inline"
-import {int, isDefined, isInstanceOf, Lifecycle, MutableObservableValue} from "@opendaw/lib-std"
-import {createElement} from "@opendaw/lib-jsx"
+import { int, isDefined, isInstanceOf, Lifecycle, MutableObservableValue } from "@opendaw/lib-std"
+import { createElement } from "@opendaw/lib-jsx"
 
 const defaultClassName = Html.adoptStyleSheet(css, "TextInput")
 
@@ -10,11 +10,18 @@ type Construct = {
     model: MutableObservableValue<string>
     className?: string
     maxChars?: int
+    placeholder?: string
 }
 
-export const TextInput = ({lifecycle, model, className, maxChars}: Construct) => {
+export const TextInput = ({ lifecycle, model, className, maxChars, placeholder }: Construct) => {
     maxChars ??= 127
-    const input: HTMLElement = (<div contentEditable="true" style={{width: "100%"}}/>)
+    const input: HTMLElement = (<div contentEditable="true" style={{ width: "100%" }} />)
+
+    // Set placeholder attribute on the inner div
+    if (placeholder) {
+        input.setAttribute("data-placeholder", placeholder)
+    }
+
     const element: HTMLElement = (
         <div className={Html.buildClassList(defaultClassName, className)}>
             {input}
@@ -23,11 +30,11 @@ export const TextInput = ({lifecycle, model, className, maxChars}: Construct) =>
     const update = () => input.textContent = model.getValue()
     lifecycle.ownAll(
         Events.subscribe(element, "focusin", (event: Event) => {
-            if (!isInstanceOf(event.target, HTMLElement)) {return}
+            if (!isInstanceOf(event.target, HTMLElement)) { return }
             Html.selectContent(event.target)
         }),
         Events.subscribe(element, "focusout", (event: Event) => {
-            if (!isInstanceOf(event.target, HTMLElement)) {return}
+            if (!isInstanceOf(event.target, HTMLElement)) { return }
             update()
             Html.unselectContent(event.target)
         }),
@@ -51,7 +58,7 @@ export const TextInput = ({lifecycle, model, className, maxChars}: Construct) =>
         }),
         Events.subscribe(element, "input", (event: Event) => {
             const target = event.target
-            if (!isInstanceOf(target, HTMLElement)) {return}
+            if (!isInstanceOf(target, HTMLElement)) { return }
             const newValue = target.textContent?.slice(0, maxChars) ?? ""
             model.setValue(newValue)
         })

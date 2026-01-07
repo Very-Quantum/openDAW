@@ -76,4 +76,7 @@ export interface LLMProvider {
 
     // Optional: Validate credentials/connection
     validate?(): Promise<{ ok: boolean, message: string }>
+
+    // Optional: Check hardware fit (e.g. CPU vs GPU for local models)
+    checkHardwareFit?(): Promise<{ ok: boolean, message: string, data?: any }>
 }

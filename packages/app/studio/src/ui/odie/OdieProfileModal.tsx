@@ -1,8 +1,10 @@
 import css from "./OdieProfileModal.sass?inline"
+import defaultAvatar from "./assets/default_avatar.png"
 
 import { createElement } from "@opendaw/lib-jsx"
 import { OdieModalFrame } from "./components/OdieModalFrame"
 import { userService } from "./services/UserService"
+
 import { DefaultObservableValue, ObservableValue, Terminator } from "@opendaw/lib-std"
 import { Button } from "@/ui/components/Button"
 import { TextInput } from "@/ui/components/TextInput"
@@ -21,7 +23,8 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
     const influencesModel = new DefaultObservableValue<string>(userService.dna.getValue().influences.join(", "))
 
     // View State
-    const activeTab$ = new DefaultObservableValue<string>("identity") // identity | sound | studio | goals
+    const activeTab$ = new DefaultObservableValue<string>("overview") // overview | identity | sound | studio | goals
+    const showAvatarMenu$ = new DefaultObservableValue<boolean>(false)
 
     // Sync to UserService
     lifecycle.own(nameModel.subscribe((v: ObservableValue<string>) => userService.update({ name: v.getValue() })))
@@ -29,6 +32,20 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
     lifecycle.own(genreModel.subscribe((v: ObservableValue<string>) => userService.update({ sonicFingerprint: { ...userService.dna.getValue().sonicFingerprint, primaryGenre: v.getValue() } })))
     lifecycle.own(vibesModel.subscribe((v: ObservableValue<string>) => userService.update({ sonicFingerprint: { ...userService.dna.getValue().sonicFingerprint, vibeKeywords: v.getValue().split(",").map(s => s.trim()) } })))
     lifecycle.own(influencesModel.subscribe((v: ObservableValue<string>) => userService.update({ influences: v.getValue().split(",").map(s => s.trim()) })))
+
+    const handleFileChange = (e: any) => {
+        const file = e.target.files[0]
+        if (!file) return
+
+        const reader = new FileReader()
+        reader.onload = (event: any) => {
+            userService.update({ avatar: event.target.result })
+            render() // Force refresh side effects
+        }
+        reader.readAsDataURL(file)
+    }
+
+    const fileInput = <input type="file" accept="image/*" style={{ display: "none" }} onchange={handleFileChange} /> as HTMLInputElement
 
     // We need a simple re-render mechanic for tabs
     const container = <div className={Html.buildClassList(className, "layout")}></div> as HTMLElement
@@ -54,11 +71,50 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
 
         // -- TABS CONTENT --
         let tabContent
-        if (activeTab === "identity") {
+        if (activeTab === "overview") {
+            tabContent = <div className="overview-tab">
+                <div className="passport-card">
+                    <div className="card-header">
+                        <div className="card-avatar" style={dna.avatar ? { backgroundImage: `url(${dna.avatar})` } : { backgroundImage: `url(${defaultAvatar})` }}></div>
+                        <div className="card-main-info">
+                            <div className="card-name">{dna.name || "UNNAMED ARTIST"}</div>
+                            <div className="card-sub">{dna.identity.role.toUpperCase()} • {dna.identity.location || "PLANET EARTH"}</div>
+                        </div>
+                    </div>
+
+                    <div className="card-stats">
+                        <div className="stat-item">
+                            <label>Experience</label>
+                            <div className="value">{dna.level.toUpperCase()}</div>
+                        </div>
+                        <div className="stat-item">
+                            <label>Primary Genre</label>
+                            <div className="value">{dna.sonicFingerprint.primaryGenre || "Unknown"}</div>
+                        </div>
+                        <div className="stat-item">
+                            <label>Workflow</label>
+                            <div className="value">{dna.techRider.workflow.replace("-", " ").toUpperCase()}</div>
+                        </div>
+                    </div>
+
+                    <div className="card-footer">
+                        <div className="fingerprint-tags">
+                            {dna.sonicFingerprint.vibeKeywords.map(v => <span className="tag">{v}</span>)}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="overview-hint">
+                    This is your <strong>Artist Passport</strong>. It defines how Odie understands your creative intent.
+                    Switch to other tabs to refine your profile.
+                </div>
+            </div>
+        }
+        else if (activeTab === "identity") {
             tabContent = <div>
                 <div className="section">
                     <label className="label">Artist Name / Alias</label>
-                    <TextInput lifecycle={lifecycle} model={nameModel} className="profile-input" />
+                    <TextInput lifecycle={lifecycle} model={nameModel} placeholder="Simon LeBon" className="profile-input" />
                 </div>
                 <div className="section">
                     <label className="label">Primary Role</label>
@@ -70,7 +126,7 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
                 </div>
                 <div className="section">
                     <label className="label">Location (City/Planet)</label>
-                    <TextInput lifecycle={lifecycle} model={locationModel} className="profile-input" />
+                    <TextInput lifecycle={lifecycle} model={locationModel} placeholder="Planet Earth" className="profile-input" />
                 </div>
                 <div className="section">
                     <label className="label">Experience Level</label>
@@ -137,7 +193,38 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
         }
 
         // -- LAYOUT ASSEMBLY --
-        const avatar = <div className="avatar">{dna.name.charAt(0).toUpperCase()}</div>
+        const avatarStyle = dna.avatar ? { backgroundImage: `url(${dna.avatar})` } : { backgroundImage: `url(${defaultAvatar})` }
+
+        // -- HOVER LOGIC --
+        let popperTimeout: any = null
+        const handleMouseEnter = () => {
+            if (popperTimeout) clearTimeout(popperTimeout)
+            showAvatarMenu$.setValue(true)
+        }
+        const handleMouseLeave = () => {
+            popperTimeout = setTimeout(() => {
+                showAvatarMenu$.setValue(false)
+            }, 300)
+        }
+
+        const avatarMenu = showAvatarMenu$.getValue() ? (
+            <div className="avatar-popper" onmouseenter={() => { if (popperTimeout) clearTimeout(popperTimeout) }} onmouseleave={handleMouseLeave}>
+                <div className="popper-arrow"></div>
+                <div className="popper-item" onclick={() => { showAvatarMenu$.setValue(false); fileInput.click(); }}>
+                    <div className="item-label">Upload Photo</div>
+                    <div className="item-hint">Supports PNG, JPG, WEBP</div>
+                </div>
+
+            </div>
+        ) : null
+
+        const avatar = <div className="avatar-wrap" onmouseenter={handleMouseEnter} onmouseleave={handleMouseLeave}>
+            <div className="avatar" style={avatarStyle}>
+                <div className="avatar-overlay">Change</div>
+            </div>
+            {avatarMenu}
+        </div>
+
         const info = <div>
             <div className="info-name">{dna.name}</div>
             <div className="info-level">{dna.level.toUpperCase()}</div>
@@ -148,6 +235,7 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
             {info}
 
             <div className="nav-list">
+                {renderTabBtn("overview", "Overview")}
                 {renderTabBtn("identity", "Identity")}
                 {renderTabBtn("sound", "Sonic Profile")}
                 {renderTabBtn("studio", "Tech Rider")}
@@ -169,6 +257,7 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
         // Main Content Area
         const main = <div className="main">
             <h2>
+                {activeTab === "overview" && "Passport Overview"}
                 {activeTab === "identity" && "Artist Identity"}
                 {activeTab === "sound" && "Sonic Fingerprint"}
                 {activeTab === "studio" && "Technical Rider"}
@@ -178,13 +267,16 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
         </div> as HTMLElement
 
         container.appendChild(sidebar)
+        container.appendChild(fileInput)
         container.appendChild(main)
     }
 
+
+
     // Reactive Refresh
     lifecycle.own(activeTab$.subscribe(() => render()))
+    lifecycle.own(showAvatarMenu$.subscribe(() => render()))
     // Also re-render if user details change (which they do via the updates)
-    // In a real app we might want to subscribe to userService.dna, but here updates are local-optimistic via models
 
     // Initial Render
     render()

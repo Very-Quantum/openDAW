@@ -40,17 +40,20 @@ const getMockAdapter = (paramName: string): AutomatableParameterFieldAdapter<num
 }
 
 
-export const LoomRenderer = (props: { lifecycle: Lifecycle, component: UIComponent, key?: string | number }) => {
-    const { lifecycle, component } = props
+// [ANTIGRAVITY] Real Parameter Resolution
+type ParamResolver = (target: string) => AutomatableParameterFieldAdapter<number> | null
+
+export const LoomRenderer = (props: { lifecycle: Lifecycle, component: UIComponent, resolver?: ParamResolver, key?: string | number }) => {
+    const { lifecycle, component, resolver } = props
 
     // Explicit check to ensure TS knows component type
     if (!component || !component.type) return <div style={{ color: "red" }}>Invalid Component</div>
 
     switch (component.type) {
         case "container":
-            return <LoomContainer lifecycle={lifecycle} component={component as UIContainer} />
+            return <LoomContainer lifecycle={lifecycle} component={component as UIContainer} resolver={resolver} />
         case "knob":
-            return <LoomKnob lifecycle={lifecycle} component={component as UIKnob} />
+            return <LoomKnob lifecycle={lifecycle} component={component as UIKnob} resolver={resolver} />
         case "switch":
             return <LoomSwitch lifecycle={lifecycle} component={component as UISwitch} />
         case "label":
@@ -63,18 +66,33 @@ export const LoomRenderer = (props: { lifecycle: Lifecycle, component: UICompone
     }
 }
 
-const LoomContainer = ({ lifecycle, component }: { lifecycle: Lifecycle, component: UIContainer }) => {
+const LoomContainer = ({ lifecycle, component, resolver }: { lifecycle: Lifecycle, component: UIContainer, resolver?: ParamResolver }) => {
     return (
         <div style={containerStyle(component.layout, component.gap) as any}>
             {component.children.map((child, i) => (
-                <LoomRenderer key={child.id || i} lifecycle={lifecycle} component={child} />
+                <LoomRenderer key={child.id || i} lifecycle={lifecycle} component={child} resolver={resolver} />
             ))}
         </div>
     )
 }
 
-const LoomKnob = ({ lifecycle, component }: { lifecycle: Lifecycle, component: UIKnob }) => {
-    const adapter = getMockAdapter(component.targetParam) // TODO: Real binding
+const LoomKnob = ({ lifecycle, component, resolver }: { lifecycle: Lifecycle, component: UIKnob, resolver?: ParamResolver }) => {
+    // 1. Try to resolve real parameter
+    let adapter: AutomatableParameterFieldAdapter<number> = null as any
+
+    if (resolver) {
+        const found = resolver(component.targetParam)
+        if (found) {
+            adapter = found
+        } else {
+            console.warn(`[Loom] Could not resolve parameter: ${component.targetParam}`)
+        }
+    }
+
+    // 2. Fallback to Mock if not found (keeps UI from crashing)
+    if (!adapter) {
+        adapter = getMockAdapter(component.targetParam)
+    }
 
     return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>

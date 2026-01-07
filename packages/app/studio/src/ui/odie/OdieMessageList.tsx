@@ -76,7 +76,7 @@ const MessageBubble = ({ message, onRetry, onWidgetAction }: { message: Message,
                         {(() => {
                             // 1. Process Status Codes (Strip from UI, keep in data for tests)
                             const displayContent = (message.content || "")
-                                .replace(/\[\[STATUS:.*?\]\]/gi, "")
+                                .replace(/\[{1,2}STATUS:.*?\]{1,2}/gi, "")
                                 .trim()
 
                             // 2. Parse Fragments (Text + Widgets)
@@ -295,23 +295,29 @@ export const OdieMessageList = ({ service }: ListProps) => {
     // We track the last message count to detect new messages vs updates
     let lastMessageCount = 0
 
+    // State for Incremental Rendering
+    let renderedCount = 0
+    const renderedNodes: HTMLElement[] = []
+
     lifecycle.own(service.messages.catchupAndSubscribe(observable => {
-        // 1. Capture Scroll State BEFORE clearing DOM
-        // If we are near bottom (stickiness), we want to stay there.
-        // We use a generous threshold (100px) because line-heights vary.
+        const messages = observable.getValue()
+        const newCount = messages.length
+
+        // 1. Capture Scroll State (Sticky Logic)
         const isNearBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 100
 
-        const messages = observable.getValue()
-        // Clear
-        container.innerHTML = ""
+        // 2. Diff & Patch
+        if (newCount === 0) {
+            // -- RESET --
+            container.innerHTML = ""
+            renderedNodes.length = 0
+            renderedCount = 0
 
-        if (messages.length === 0) {
+            // Render Empty State
             const emptyState = <div className="EmptyState">
                 <div className="RobotIcon"><Icon symbol={IconSymbol.Robot} style={{ fontSize: "2em" }} /></div>
                 <div className="Title">ODIE ONLINE</div>
                 <div className="Subtitle">Awaiting Input...</div>
-
-                {/* Export Button (Subtle) */}
                 <div className="ActionContainer">
                     <button
                         onclick={() => odieFeedback.export().then(count => alert(`Exported ${count} feedback logs.`))}
@@ -322,49 +328,112 @@ export const OdieMessageList = ({ service }: ListProps) => {
                 </div>
             </div>
             container.appendChild(emptyState)
+
+        } else if (newCount < renderedCount) {
+            // -- UNEXPECTED SHRINK (e.g. Deletion) --
+            // Fallback to full rebuild for safety
+            container.innerHTML = ""
+            renderedNodes.length = 0
+            renderedCount = 0
+            // Recursively handle as "from scratch"
+            messages.forEach(msg => appendMessage(msg))
+
         } else {
-            messages.forEach(msg => {
-                // Pass a callback for Retry
-                container.appendChild(MessageBubble({
-                    message: msg,
-                    onRetry: (text) => service.sendMessage(text),
-                    onWidgetAction: (action) => service.handleWidgetAction(action)
-                }))
-            })
+            // -- INCREMENTAL UPDATE --
 
-            // Append the anchor last
-            container.appendChild(bottomAnchor)
-
-            // Scroll Logic
-            const isNewMessage = messages.length > lastMessageCount
-            lastMessageCount = messages.length
-
-            if (isNewMessage || isNearBottom) {
-                // Use double RAF to ensure paint cycle is complete
-                // We use 'instant' (true) for new messages to snap, and 'smooth' (false) for streaming
-                requestAnimationFrame(() => {
-                    requestAnimationFrame(() => scrollToBottom(isNewMessage))
-                })
+            // A. Remove Empty State if it exists (first message arrival)
+            if (renderedCount === 0 && newCount > 0) {
+                container.innerHTML = ""
             }
 
+            // B. Handle Streaming Update (Last message changed?)
+            // If the count is the same, it means the last message might have updated text.
+            // If the count grew, the previous "last" message is technically "done", so we leave it alone
+            // and append the new ones.
+            // CAUTION: In some cases, previous messages *could* change (e.g. status updates).
+            // But for Odie, usually only the last one is active.
+            // Optimization: dynamic replacement of the last node if count matches.
 
-            // Post-Render Actions (Mermaid, Images)
-            setTimeout(() => {
-                // Render Mermaid Diagrams
-                mermaid.run({
-                    nodes: container.querySelectorAll('.mermaid')
-                }).catch(err => console.error("Mermaid Render Error", err))
+            if (newCount === renderedCount && renderedCount > 0) {
+                // FAST PATH: Re-render ONLY the last message
+                const lastIdx = newCount - 1
+                const lastMsg = messages[lastIdx]
+                const newBubble = createBubble(lastMsg)
 
-                // 🎨 Make AI-generated images clickable
-                const images = container.querySelectorAll('.odie-markdown img')
-                images.forEach(img => {
-                    img.addEventListener('click', () => {
-                        showImageModal((img as HTMLImageElement).src)
-                    })
-                })
-            }, 50)
+                const oldNode = renderedNodes[lastIdx]
+                if (oldNode && oldNode.parentNode === container) {
+                    container.replaceChild(newBubble, oldNode)
+                    renderedNodes[lastIdx] = newBubble
+                } else {
+                    // Should not happen, but safe fallback
+                    container.appendChild(newBubble)
+                    renderedNodes[lastIdx] = newBubble
+                }
+            } else {
+                // C. Append New Messages
+                // start from renderedCount
+                for (let i = renderedCount; i < newCount; i++) {
+                    appendMessage(messages[i])
+                }
+            }
+
+            // D. Ensure Anchor is last
+            if (bottomAnchor.parentNode !== container) {
+                container.appendChild(bottomAnchor)
+            } else {
+                // If we appended nodes, anchor might not be last anymore in DOM order?
+                // Actually appendChild moves it. So effectively re-appending it ensures it's at the bottom.
+                container.appendChild(bottomAnchor)
+            }
         }
+
+        // Update Valid State
+        renderedCount = newCount
+
+        // 3. Scroll Logic
+        if (newCount > lastMessageCount || isNearBottom) {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => scrollToBottom(newCount > lastMessageCount))
+            })
+        }
+        lastMessageCount = newCount
+
+        // 4. Post-Render Effects (Mermaid, Images) - Debounced
+        // We only need to run this on the NEW or UPDATED nodes ideally, but running on all is cheap enough if cached.
+        setTimeout(() => {
+            mermaid.run({ nodes: container.querySelectorAll('.mermaid') })
+                .catch(e => console.error("Mermaid Err", e))
+
+            // Re-bind images (idempotent listeners would be better, but this is okay for now)
+            const images = container.querySelectorAll('.odie-markdown img')
+            images.forEach(img => {
+                // Hack to avoid double-binding: check class? 
+                // Actually, purely functional usage: we can just re-bind. 
+                // 'click' adds up? Yes. 
+                // Better: check if we already handled it.
+                if (!(img as any)._odieModalBound) {
+                    img.addEventListener('click', () => showImageModal((img as HTMLImageElement).src));
+                    (img as any)._odieModalBound = true
+                }
+            })
+        }, 50)
+
     }))
+
+    // Helper to create and append
+    const createBubble = (msg: Message) => {
+        return MessageBubble({
+            message: msg,
+            onRetry: (text) => service.sendMessage(text),
+            onWidgetAction: (action) => service.handleWidgetAction(action)
+        }) as HTMLElement
+    }
+
+    const appendMessage = (msg: Message) => {
+        const node = createBubble(msg)
+        container.appendChild(node)
+        renderedNodes.push(node)
+    }
 
     // -- History Drawer Injection (Service-Driven) --
     interface HistoryPanelElement extends HTMLElement {

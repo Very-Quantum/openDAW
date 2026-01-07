@@ -59,6 +59,101 @@ export class OpenAICompatibleProvider implements LLMProvider {
         this.requiresUrl = true
     }
 
+    async checkHardwareFit(): Promise<{ ok: boolean, message: string, data?: any }> {
+        if (this.id !== "ollama") return { ok: true, message: "Hardware fitting for cloud providers is handled automatically." }
+
+        try {
+            const baseUrl = this.config.baseUrl || ""
+            let modelId = this.config.modelId
+
+            // Auto-detect model if missing
+            if (!modelId) {
+                const available = await this.fetchModels()
+                if (available.length > 0) {
+                    modelId = available[0]
+                    this.config.modelId = modelId
+                }
+            }
+
+            if (!modelId) {
+                return { ok: false, message: "No model configured or found. Please select a model first." }
+            }
+
+            let models = await ollamaInspector.getHardwareStatus(baseUrl)
+
+            // If no model is active, trigger a warm-up
+            if (models.length === 0 || !models.find(m => m.name === modelId)) {
+                await this.warmUpModel(baseUrl, modelId)
+                // Re-fetch
+                models = await ollamaInspector.getHardwareStatus(baseUrl)
+            }
+
+            if (models.length === 0) {
+                return {
+                    ok: false,
+                    message: "Failed to load model into memory. Check your Ollama logs."
+                }
+            }
+
+            // Find the most relevant model (or current one)
+            const target = models.find(m => m.name === modelId) || models[0]
+
+            const size = target.size || 0
+            const vram = target.size_vram || 0
+
+            let gpuPercent = 0
+            if (size > 0) gpuPercent = Math.round((vram / size) * 100)
+            const cpuPercent = 100 - gpuPercent
+
+            if (gpuPercent === 100) {
+                return {
+                    ok: true,
+                    message: `Elite Fit: ${target.name} is running 100% on your GPU. Your audio engines are safe.`,
+                    data: { gpu: gpuPercent, cpu: cpuPercent, model: target.name }
+                }
+            } else if (gpuPercent > 0) {
+                return {
+                    ok: false,
+                    message: `Partial Spillover: ${target.name} is using ${cpuPercent}% CPU muscles. This may interfere with heavy audio sessions.`,
+                    data: { gpu: gpuPercent, cpu: cpuPercent, model: target.name }
+                }
+            } else {
+                return {
+                    ok: false,
+                    message: `Critical CPU Load: ${target.name} is running 100% on your CPU. This is highly likely to cause audio glitches.`,
+                    data: { gpu: gpuPercent, cpu: cpuPercent, model: target.name }
+                }
+            }
+
+        } catch (e: any) {
+            return { ok: false, message: `Check Failed: ${e.message}` }
+        }
+    }
+
+    private async warmUpModel(baseUrl: string, modelId: string) {
+        let root = baseUrl
+        if (root.includes("/v1")) root = root.replace(/\/v1\/?$/, "")
+        if (root.includes("/api/chat")) root = root.replace(/\/api\/chat$/, "")
+        if (root.endsWith("/")) root = root.slice(0, -1)
+
+        const url = `${root}/api/generate`
+
+        try {
+            // We use a no-op prompt to just force a load
+            await fetch(url, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    model: modelId,
+                    prompt: "",
+                    stream: false
+                })
+            })
+        } catch (e) {
+            console.error("🔍 Model Warm-up Failed", e)
+        }
+    }
+
     async validate(): Promise<{ ok: boolean, message: string }> {
         try {
             const models = await this.fetchModels()
@@ -463,7 +558,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
             // Strategy 2: Ollama Standard (/api/tags)
             // Ollama usually runs on port 11434, root is often just http://localhost:11434
             // If user passed .../v1 or .../api/chat, strip it.
-            // If user passed .../v1 or .../api/chat, strip it.
+
             const rootUrl = baseUrl
                 .replace(/\/v1\/chat\/completions\/?$/, "")
                 .replace(/\/api\/chat\/?$/, "")

@@ -45,7 +45,7 @@ export class Gemini3Provider implements LLMProvider {
     readonly id = "gemini-3" // Distinct ID for safety
     readonly manifest = {
         name: "GEMINI API",
-        description: "Standard Intelligence & High-Fidelity Vision (Gemini 3).",
+        description: "Advanced Reasoning, High Speed & High-Fidelity Vision.",
         icon: "✨",
         getKeyUrl: "https://aistudio.google.com/app/apikey",
         docsUrl: "https://ai.google.dev/gemini-api/docs/thinking"

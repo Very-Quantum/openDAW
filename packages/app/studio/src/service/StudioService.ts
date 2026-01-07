@@ -60,27 +60,26 @@ import {
     SoundfontService,
     StudioPreferences,
     TimelineRange,
-    WavFile
+    WavFile,
 } from "@opendaw/studio-core"
-import { ProjectDialogs } from "@/project/ProjectDialogs"
 import { AudioUnitBox } from "@opendaw/studio-boxes"
 import { AudioUnitType } from "@opendaw/studio-enums"
+import { ProjectDialogs } from "@/project/ProjectDialogs"
+
 import { Surface } from "@/ui/surface/Surface"
 import { SoftwareMIDIPanel } from "@/ui/software-midi/SoftwareMIDIPanel"
 import { Mixdowns } from "@/service/Mixdowns"
 import { ShadertoyState } from "@/ui/shadertoy/ShadertoyState"
 
-/**
- * I am just piling stuff after stuff in here to boot the environment.
- * I suppose this gets cleaned up sooner or later.
- */
-
-const range = new TimelineRange({ padding: 12 })
-range.minimum = PPQN.fromSignature(3, 8)
-range.maxUnits = PPQN.fromSignature(128, 1)
-range.showUnitInterval(0, PPQN.fromSignature(9, 1))
-
-const snapping = new Snapping(range)
+// Define a concrete event type for Odie
+export type OdieEvent =
+    | { type: "chat-message", message: string }
+    | { type: "command-executed", command: string }
+    | { type: "project-loaded", name: string }
+    | { type: "note-added", track: string, pitch: number, start: number }
+    | { type: "region-created", track: string, time: number }
+    | { type: "error", message: string }
+    | { [key: string]: any } // Allow extensibility while transitioning, but prefer explicit types
 
 export interface Transport {
     play: () => void
@@ -96,6 +95,18 @@ export interface Transport {
     loop: ObservableValue<boolean>
     setLoop: (enabled: boolean) => void
 }
+
+/**
+ * I am just piling stuff after stuff in here to boot the environment.
+ * I suppose this gets cleaned up sooner or later.
+ */
+
+const range = new TimelineRange({ padding: 12 })
+range.minimum = PPQN.fromSignature(3, 8)
+range.maxUnits = PPQN.fromSignature(128, 1)
+range.showUnitInterval(0, PPQN.fromSignature(9, 1))
+
+const snapping = new Snapping(range)
 
 export class StudioService implements ProjectEnv {
     readonly layout = {
@@ -180,7 +191,9 @@ export class StudioService implements ProjectEnv {
     get soundfontService(): SoundfontService { return this.#soundfontService }
     get projectProfileService(): ProjectProfileService { return this.#projectProfileService }
 
-    readonly odieEvents = new Notifier<any>()
+    // [ANTIGRAVITY] Type-safe event notifier
+    readonly odieEvents = new Notifier<OdieEvent>()
+    private readonly _fallbackLoop = new DefaultObservableValue(false)
     get transport(): Transport {
         const self = this
         return {
@@ -189,26 +202,30 @@ export class StudioService implements ProjectEnv {
             stop: () => self.engine.stop(true),
             record: () => self.runIfProject(p => p.startRecording(true)),
             togglePlay: () => self.engine.isPlaying.getValue() ? self.engine.stop() : self.engine.play(),
-            toggleRecord: () => self.runIfProject(p => p.startRecording(true)),
+            toggleRecord: () => {
+                self.optProject.ifSome(p => {
+                    if (p.engine.isRecording.getValue()) {
+                        p.engine.stopRecording()
+                    } else {
+                        p.startRecording(true)
+                    }
+                })
+            },
             get isPlaying() { return self.engine.isPlaying },
             get isRecording() { return self.engine.isRecording },
             get position() { return self.engine.position },
             setPosition: (pos: number) => self.engine.setPosition(pos),
             get loop() {
-                return self.optProject.match({
+                return self.optProject.match<ObservableValue<boolean>>({
                     some: (p) => {
-                        // Patching missing loop property issue
-                        return (p.timelineBox as any).loop || new DefaultObservableValue(false)
+                        return p.timelineBox.loopArea.enabled
                     },
-                    none: () => new DefaultObservableValue(false)
+                    none: () => self._fallbackLoop
                 })
             },
             setLoop: (enabled: boolean) => {
                 self.optProject.ifSome(p => {
-                    const loop = (p.timelineBox as any).loop
-                    if (loop && typeof loop.setValue === "function") {
-                        loop.setValue(enabled)
-                    }
+                    p.timelineBox.loopArea.enabled.setValue(enabled)
                 })
             }
         }

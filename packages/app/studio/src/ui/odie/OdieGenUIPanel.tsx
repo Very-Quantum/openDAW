@@ -69,7 +69,8 @@ export const OdieGenUIPanel = (props: { lifecycle: Lifecycle, service: OdieServi
         }
 
         // Render new payload
-        content.appendChild(<LoomRenderer lifecycle={lifecycle} component={payload.root} />)
+        const resolver = (path: string) => service.appControl?.resolveParameter(path) ?? null
+        content.appendChild(<LoomRenderer lifecycle={lifecycle} component={payload.root} resolver={resolver} />)
     }))
 
     return (

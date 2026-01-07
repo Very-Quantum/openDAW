@@ -66,7 +66,6 @@ export const Manuals: ReadonlyArray<Manual> = [
             { type: "page", label: "Quickstart", path: "/manuals/odie/quickstart" },
             { type: "page", label: "Chat Interface", path: "/manuals/odie/chat-interface" },
             { type: "page", label: "Command Reference", path: "/manuals/odie/command-reference" },
-            { type: "page", label: "Odie Academy", path: "/manuals/odie/school-guide" },
             { type: "page", label: "GenUI Features", path: "/manuals/odie/genui-features" },
             { type: "page", label: "Troubleshooting", path: "/manuals/odie/troubleshooting" },
             { type: "page", label: "Free AI Guide", path: "/manuals/odie/free-ai-guide" },
@@ -83,7 +82,6 @@ export const Manuals: ReadonlyArray<Manual> = [
                     { type: "page", label: "Dual Brain", path: "/manuals/odie/developer/dual-brain" },
                     { type: "page", label: "App Control Bridge", path: "/manuals/odie/developer/app-control" },
                     { type: "page", label: "GenUI Engine", path: "/manuals/odie/developer/genui-engine" },
-                    { type: "page", label: "School Internals", path: "/manuals/odie/developer/odie-school" },
                     { type: "page", label: "Testing & Benchmarks", path: "/manuals/odie/developer/testing" }
                 ]
             }

@@ -31,6 +31,58 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
         )
     }
 
+    // -- KEY RING EDITOR --
+    const KeyRingEditor = ({ config, provider, save }: { config: any, provider: any, save: () => void }) => {
+        const keyLibrary: string[] = config.keyLibrary || []
+        if (keyLibrary.length === 0 && config.apiKey) keyLibrary.push(config.apiKey)
+        const statuses = provider.getKeyStatuses ? provider.getKeyStatuses() : keyLibrary.map((k, i) => ({ key: '•••' + k.slice(-4), status: 'unknown', isActive: i === 0 }))
+
+        return <div className="input-row" style={{ alignItems: "flex-start" }}>
+            <label className="label" style={{ marginTop: "8px" }}>Infinity Keys</label>
+            <div style={{ flex: "1" }}>
+                <div className="key-ring-list">
+                    {keyLibrary.map((key, idx) => {
+                        const info = (statuses as any)[idx] || { key: '????', status: 'unknown', isActive: false }
+                        const isExhausted = info.status === 'exhausted'
+                        const isActive = info.isActive
+
+                        return <div style={{
+                            display: "flex", alignItems: "center", padding: "6px 12px",
+                            borderBottom: "1px solid rgba(255,255,255,0.05)",
+                            background: isActive ? "rgba(var(--color-accent-rgb), 0.1)" : "transparent",
+                            opacity: isExhausted ? "0.5" : "1"
+                        }}>
+                            <div style={{ width: "6px", height: "6px", borderRadius: "50%", marginRight: "10px", background: isExhausted ? "red" : (isActive ? "var(--accent)" : "#666") }} />
+                            <div style={{ flex: "1", fontFamily: "monospace", fontSize: "10px", letterSpacing: "1px", color: isExhausted ? "#888" : "#eee" }}>
+                                {info.key || '••••' + key.slice(-4)}
+                            </div>
+                            <button className="btn-secondary" style={{ padding: "0 4px", border: "none", background: "none", fontSize: "18px", color: "#666" }} onclick={(e: any) => {
+                                e.stopPropagation()
+                                if (confirm("Remove this API key?")) {
+                                    const newLib = [...keyLibrary]; newLib.splice(idx, 1)
+                                    config.keyLibrary = newLib; config.apiKey = newLib[0] || ""; save()
+                                }
+                            }}>×</button>
+                        </div>
+                    })}
+                    <div style={{ padding: "6px", background: "rgba(255,255,255,0.02)", display: "flex", gap: "6px" }}>
+                        <button className="odie-btn" style={{ flex: "1", fontSize: "9px" }} onclick={() => {
+                            const newKey = prompt("Enter Gemini API Key:")
+                            if (newKey && newKey.trim().length > 10) {
+                                if (!config.keyLibrary) config.keyLibrary = []
+                                config.keyLibrary.push(newKey.trim())
+                                if (config.keyLibrary.length === 1) config.apiKey = newKey.trim()
+                                save()
+                            }
+                        }}>+ Add Key</button>
+                        <a href="https://aistudio.google.com/app/apikey" target="_blank" className="odie-btn" style={{ flex: "0.5", fontSize: "9px", textDecoration: "none" }}>Get Key ↗</a>
+                    </div>
+                </div>
+                <div style={{ fontSize: "9px", color: "var(--color-gray)", marginTop: "6px", opacity: "0.6" }}>Odie will rotate keys automatically to avoid rate limits.</div>
+            </div>
+        </div>
+    }
+
     const ConfigCard = ({ providerId, overrides }: { providerId: string, overrides?: any }) => {
         const provider = service.ai.getProvider(providerId)
         if (!provider) return <div className="error">Provider not found</div>
@@ -38,23 +90,18 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
         const config = service.ai.getConfig(providerId)
         const title = overrides?.title || provider.manifest.name
         const desc = overrides?.desc || provider.manifest.description
-
-        const keyLibrary: string[] = config.keyLibrary || []
-        if (keyLibrary.length === 0 && config.apiKey) keyLibrary.push(config.apiKey)
-        const activeKey = keyLibrary[0]
-
-        // Async State Containers
         const validationSlot = <div className="validation-area"></div> as HTMLElement
 
         const saveConfig = () => {
-            const newConfig = { ...config, keyLibrary: keyLibrary, apiKey: keyLibrary[0] || "" }
-            service.ai.setConfig(provider.id, newConfig)
+            const lib = config.keyLibrary || []
+            if (lib.length > 0) config.apiKey = lib[0]
+            service.ai.setConfig(provider.id, { ...config })
+            render()
         }
 
         const runValidation = async (tempKey?: string, tempUrl?: string) => {
             validationSlot.innerHTML = ""
             validationSlot.appendChild(ConnectionStatus({ status: 'checking', message: "" }))
-
             const newConfig = { ...config }
             if (tempKey !== undefined) newConfig.apiKey = tempKey
             if (tempUrl !== undefined) newConfig.baseUrl = tempUrl
@@ -62,109 +109,136 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
 
             if (provider.validate) {
                 const res = await provider.validate()
-                validationSlot.innerHTML = ""
-                validationSlot.appendChild(ConnectionStatus({ status: res.ok ? 'success' : 'error', message: res.message }))
+                const result = { status: res.ok ? 'success' : 'error', message: res.message, models: [] as string[] }
 
                 if (res.ok && provider.fetchModels) {
-                    const models = await provider.fetchModels()
-                    if (models.length > 0) {
-                        validationSlot.appendChild(
-                            <div style={{ marginTop: "20px" }}>
-                                <label className="label">Select Model</label>
-                                <select className="settings-input native" onchange={(e: any) => { config.modelId = e.target.value; saveConfig() }}>
-                                    {models.map(m => <option value={m} selected={m === config.modelId}>{m}</option>)}
-                                </select>
-                            </div>
-                        )
-                    }
+                    result.models = await provider.fetchModels()
                 }
+
+                validationResults.set(providerId, result)
+                renderValidationResult(result)
             }
         }
 
-        // Trigger initial validation
-        if (!isEmbedded) setTimeout(() => runValidation(), 0)
+        const renderValidationResult = (result: { status: any, message: string, models?: string[] }) => {
+            validationSlot.innerHTML = ""
+            validationSlot.appendChild(ConnectionStatus({ status: result.status, message: result.message }))
 
-        // Determine if we should show the "Extras" (sliders)
+            if (result.status === 'success' && result.models && result.models.length > 0) {
+                validationSlot.appendChild(
+                    <div className="input-row" style={{ marginTop: "12px" }}>
+                        <label className="label">Active Model</label>
+                        <select className="settings-input native" style={{ margin: "0", flex: "1" }} onchange={(e: any) => { config.modelId = (e.target as HTMLSelectElement).value; saveConfig() }}>
+                            {result.models.map(m => <option value={m} selected={m === config.modelId}>{m}</option>)}
+                        </select>
+                    </div>
+                )
+            }
+        }
+
+        const cachedResult = validationResults.get(providerId)
+        if (cachedResult) renderValidationResult(cachedResult)
+
+        const currentCheckKey = `${config.apiKey}|${config.baseUrl}|${config.modelId}`
+        if (!isEmbedded && lastValidatedConfig.get(providerId) !== currentCheckKey) {
+            lastValidatedConfig.set(providerId, currentCheckKey)
+            setTimeout(() => runValidation(), 0)
+        }
         const isActive = service.ai.activeProviderId.getValue() === providerId
 
-        return <div className={`config-group ${isActive ? 'active' : ''}`}>
-
-            {/* Header Area */}
+        return <div className={`config-card ${isActive ? 'active-brain' : ''}`} style={{ border: "none", background: "none", padding: "0" }}>
             <div className="provider-header">
-                {/* <div className="icon-box">{provider.manifest.icon || "?"}</div> NO EMOJI */}
                 <div className="info">
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                        <h3>{title}</h3>
-                        <button className="btn-secondary" onclick={() => runValidation()}>Test Connection</button>
-                    </div>
+                    <h3>{title}</h3>
                     <div className="desc">{desc}</div>
                 </div>
+                <button className="odie-btn" onclick={() => runValidation()}>Test Connection</button>
             </div>
 
-            {/* URL Input */}
-            {provider.requiresUrl && (
-                <div>
-                    <label className="label">Endpoint URL</label>
-                    <input type="text" value={config.baseUrl || ""} className="settings-input native"
-                        onchange={(e: any) => { config.baseUrl = e.target.value; saveConfig() }} />
-                </div>
-            )}
-
-            {/* API Key Input */}
-            {provider.requiresKey && (
-                <div>
-                    <label className="label">Active Key</label>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.3)", padding: "10px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.1)" }}>
-                        <span className="api-key-display">••••{activeKey?.slice(-6) || "none"}</span>
-                        <button className="btn-secondary" onclick={() => {
-                            const key = prompt("Enter new API Key")
-                            if (key) { config.apiKey = key; saveConfig(); render() }
-                        }}>Change</button>
+            <div className="settings-grid">
+                {provider.requiresUrl && (
+                    <div className="input-row">
+                        <label className="label">Endpoint URL</label>
+                        <input type="text" value={config.baseUrl || ""} className="settings-input native" style={{ flex: "1", margin: "0" }}
+                            onchange={(e: any) => { config.baseUrl = (e.target as HTMLInputElement).value; saveConfig() }} />
                     </div>
-                </div>
-            )}
+                )}
 
-            {/* Validation Output */}
-            {validationSlot}
+                {provider.requiresKey && (
+                    providerId === 'gemini-3' ? (
+                        <KeyRingEditor config={config} provider={provider} save={saveConfig} />
+                    ) : (
+                        <div className="input-row">
+                            <label className="label">Active Key</label>
+                            <div style={{ display: "flex", flex: "1", justifyContent: "space-between", alignItems: "center", background: "rgba(0,0,0,0.3)", padding: "6px 12px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.1)" }}>
+                                <span className="api-key-display" style={{ fontSize: "11px", border: "none", background: "none", padding: "0" }}>••••{config.apiKey?.slice(-6) || "none"}</span>
+                                <button className="btn-secondary" style={{ padding: "2px 8px" }} onclick={() => {
+                                    const key = prompt("Enter new API Key")
+                                    if (key) { config.apiKey = key; saveConfig() }
+                                }}>Swap Key</button>
+                            </div>
+                        </div>
+                    )
+                )}
 
-            {/* Extras (only if active for cleanliness, or always?) User wants clean. */}
-            {provider.id === "gemini-3" && [
-                renderThinkingSlider(config, provider.id),
-                renderMediaResolutionControl(config, provider.id)
-            ]}
+                {validationSlot}
+
+                {provider.id === "gemini-3" && [
+                    <div className="divider" />,
+                    renderThinkingControl(config, provider.id),
+                    renderMediaResolutionControl(config, provider.id)
+                ]}
+            </div>
         </div>
     }
 
-    const renderThinkingSlider = (config: any, providerId: string) => {
+    const renderThinkingControl = (config: any, providerId: string) => {
         const levels = ["minimal", "low", "medium", "high"]
         const current = config.thinkingLevel || "high"
-        const idx = levels.indexOf(current)
-        return <div className="config-card">
-            <label className="label">Thinking Depth: {current.toUpperCase()}</label>
-            <input type="range" min="0" max="3" value={idx.toString()}
-                onchange={(e: any) => { config.thinkingLevel = levels[parseInt(e.target.value)]; service.ai.setConfig(providerId, config); render() }} />
+        return <div className="input-row">
+            <label className="label">Thinking Depth</label>
+            <div className="value">
+                {levels.map(l => (
+                    <button
+                        className={current === l ? "odie-btn-primary" : "odie-btn"}
+                        style={{ flex: "1", fontSize: "9px", padding: "4px 2px" }}
+                        onclick={() => { config.thinkingLevel = l; service.ai.setConfig(providerId, config); render() }}>
+                        {l.toUpperCase()}
+                    </button>
+                ))}
+            </div>
         </div>
     }
 
     const renderMediaResolutionControl = (config: any, providerId: string) => {
-        const resolutions = ["LOW", "MEDIUM", "HIGH", "ULTRA_HIGH"]
+        const resolutions = ["LOW", "MEDIUM", "HIGH", "ULTRA"]
         const current = config.mediaResolution || "ULTRA_HIGH"
-        return <div className="config-card">
+        return <div className="input-row">
             <label className="label">Vision Fidelity</label>
-            <div style={{ display: "flex", gap: "8px", marginTop: "8px" }}>
-                {resolutions.map(r =>
-                    <button
-                        className={current === r ? "btn-primary" : "btn-secondary"}
-                        style={{ flex: "1", fontSize: "10px" }}
-                        onclick={() => { config.mediaResolution = r; service.ai.setConfig(providerId, config); render() }}>
+            <div className="value">
+                {resolutions.map(r => {
+                    const value = r === "ULTRA" ? "ULTRA_HIGH" : r
+                    return <button
+                        className={current === value ? "odie-btn-primary" : "odie-btn"}
+                        style={{ flex: "1", fontSize: "9px", padding: "4px 2px" }}
+                        onclick={() => { config.mediaResolution = value; service.ai.setConfig(providerId, config); render() }}>
                         {r}
                     </button>
-                )}
+                })}
             </div>
         </div>
     }
 
     // -- RENDER ENGINE --
+    const headerSlot = <div className="header-slot" style={{ width: "100%" }}></div> as HTMLElement
+    const footerSlot = <div className="footer-slot" style={{ width: "100%" }}></div> as HTMLElement
+
+    container.appendChild(headerSlot)
+    container.appendChild(content)
+    container.appendChild(footerSlot)
+
+    const lastValidatedConfig = new Map<string, string>()
+    const validationResults = new Map<string, { status: any, message: string, models?: string[] }>()
 
     const renderHeader = () => {
         const activeId = service.ai.activeProviderId.getValue()
@@ -172,8 +246,6 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
 
         return <div className="header">
             <div className="title-row">
-                <span style={{ fontSize: "16px", fontWeight: "700" }}>System Config</span>
-
                 <div className="provider-switch">
                     <div onclick={() => { service.ai.setActiveProvider("gemini-3"); render() }}
                         className={`pill ${isGemini ? 'active' : ''}`}>
@@ -188,38 +260,141 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
                         LOCAL
                     </div>
                 </div>
+                <div className="switch-info">
+                    Odie Brain Switch: Use this to toggle between Cloud and Local processing.
+                </div>
             </div>
             {!isEmbedded && <button onclick={onBack} style={{ background: "none", border: "none", fontSize: "16px", cursor: "pointer", color: "var(--color-gray)" }}>✕</button>}
         </div> as HTMLElement
     }
 
     const render = () => {
-        container.innerHTML = ""
-        container.appendChild(renderHeader())
-        container.appendChild(content)
-
-        const footer = <div className="footer">
-            <button onclick={async () => {
-                if (await Dialogs.approve({ message: "Reset Odie Wizard and clear all settings?" })) {
-                    service.ai.resetWizard();
-                    location.reload()
-                }
-            }} style={{ color: "var(--color-red)", background: "transparent", border: "none", fontSize: "11px", cursor: "pointer", opacity: "0.7" }}>Reset Wizard</button>
-            <button onclick={onBack} className="btn-primary">Done</button>
-        </div> as HTMLElement
-
-        container.appendChild(footer)
-
-        // Render Active Content
-        content.innerHTML = ""
         const id = service.ai.activeProviderId.getValue()
+
+        // 1. Update Header
+        headerSlot.innerHTML = ""
+        headerSlot.appendChild(renderHeader())
+
+        // 2. Build Content
+        const nextContentRows: HTMLElement[] = []
         if (id === "gemini-3") {
-            content.appendChild(ConfigCard({ providerId: id }))
+            const info = <div className="guide-col">
+                <div className="info-guide" style={{ padding: "16px", background: "rgba(var(--color-accent-rgb), 0.05)", borderRadius: "8px", border: "1px solid rgba(var(--color-accent-rgb), 0.1)" }}>
+                    <h4 style={{ margin: "0 0 12px 0", fontSize: "14px", color: "var(--accent)", textTransform: "uppercase", letterSpacing: "0.5px" }}>Privacy & Data Usage</h4>
+                    <div style={{ fontSize: "12px", lineHeight: "1.5", color: "#ccc" }}>
+                        <div style={{ marginBottom: "16px" }}>
+                            <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>Free vs Paid Policies</strong></p>
+                            <ul style={{ margin: "0", paddingLeft: "18px" }}>
+                                <li style={{ marginBottom: "8px" }}><strong>Free Tier:</strong> Data is shared with Google to improve models and may be viewed by human reviewers.</li>
+                                <li><strong>Paid Tier:</strong> Data is strictly private and never used by Google for training.</li>
+                            </ul>
+                        </div>
+                        <div style={{ marginBottom: "16px" }}>
+                            <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>Project Context</strong></p>
+                            <p style={{ margin: "0 0 8px 0" }}>Odie transmits the raw project state required for generation. Avoid working with sensitive or confidential information on the Free Tier.</p>
+                            <p style={{ margin: "0", fontSize: "11px", fontStyle: "italic" }}>Note: Google disconnects this data from your Account, API Key, and Project before any human review occurs.</p>
+                        </div>
+                        <div>
+                            <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>Infinity Key Strategy</strong></p>
+                            <p style={{ margin: "0" }}>Rotate multiple free keys to multiply your total rate limits for an uninterrupted session.</p>
+                        </div>
+                    </div>
+                </div>
+            </div> as HTMLElement
+
+            const config = <div className="config-col">
+                {ConfigCard({ providerId: id })}
+            </div> as HTMLElement
+
+            nextContentRows.push(<div className="split-row">{info}{config}</div> as HTMLElement)
         } else if (id.includes("ollama")) {
-            content.appendChild(ConfigCard({ providerId: id, overrides: { title: "Ollama (Local)", desc: "Private and offline execution." } }))
+            const provider = service.ai.getProvider(id)!
+            const info = <div className="guide-col">
+                <div className="info-guide" style={{ padding: "16px", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                    <h4 style={{ margin: "0 0 12px 0", fontSize: "14px", color: "#aaa", textTransform: "uppercase", letterSpacing: "0.5px" }}>Privacy & Audio Safety</h4>
+                    <div style={{ fontSize: "12px", lineHeight: "1.5", color: "#bbb" }}>
+                        <div style={{ marginBottom: "16px" }}>
+                            <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>100% Secure</strong></p>
+                            <p style={{ margin: "0" }}>Local models run strictly on your machine. No data leaves your hardware, making this the ideal choice for high-security environments.</p>
+                        </div>
+                        <div style={{ marginBottom: "16px" }}>
+                            <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>Finding Your Fit</strong></p>
+                            <p style={{ margin: "0 0 8px 0" }}>Ollama automatically detects your hardware. If a model is too big for your Graphics Card (GPU), it moves to your slower System Memory (CPU). Run <code>ollama ps</code> in your terminal while Odie is active; if it shows "100% CPU", the model is too heavy for your machine's muscles and will be sluggish.</p>
+                            <p style={{ margin: "0", fontSize: "11px", fontStyle: "italic", color: "var(--color-gray)" }}>Goal: Find the largest version that shows "100% GPU" for the smoothest experience.</p>
+                        </div>
+                        <div style={{ marginBottom: "16px" }}>
+                            <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>The Trade-Off</strong></p>
+                            <p style={{ margin: "0 0 8px 0" }}>Local processing is private and secure, but generally slower than the Cloud. Smaller computers may find local models and GenUI unusable.</p>
+                        </div>
+                        <div style={{ marginBottom: "0" }}>
+                            <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>Audio Priority</strong></p>
+                            <p style={{ margin: "0 0 8px 0" }}>Odie is a side-car subsystem. While it runs in an isolated process, keeping your model in the <strong>GPU (VRAM)</strong> is the "Elite Standard."</p>
+                            <p style={{ margin: "0 0 8px 0" }}>Running AI on your CPU consumes the same "muscles" used for audio math and plugins. If the AI is too heavy, your audio may pop or glitch. Aim for a model size that fits entirely on your Graphics Card to keep your session smooth.</p>
+                        </div>
+                    </div>
+                </div>
+            </div> as HTMLElement
+
+            const config = <div className="config-col">
+                {ConfigCard({ providerId: id, overrides: { title: "Ollama (Local)", desc: "Private execution." } })}
+
+                <div className="settings-grid" style={{ marginTop: "12px" }}>
+                    <div className="input-row">
+                        <label className="label">Hardware Fit</label>
+                        <div style={{ flex: "1", display: "flex", alignItems: "center", gap: "12px", background: "rgba(255,255,255,0.02)", padding: "8px 12px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.05)" }}>
+                            <span id="hardware-fit-msg" style={{ flex: "1", fontSize: "11px", color: "var(--color-gray)" }}>Detecting VRAM vs CPU...</span>
+                            <button className="odie-btn" style={{ fontSize: "10px" }} onclick={async (e: any) => {
+                                const btn = e.currentTarget as HTMLButtonElement;
+                                const originalText = btn.innerText;
+                                btn.innerText = "Testing...";
+                                btn.disabled = true;
+
+                                try {
+                                    const status = await provider.checkHardwareFit!();
+                                    const color = status.ok ? "var(--color-green)" : (status.data?.cpu === 100 ? "var(--color-red)" : "var(--color-orange)");
+                                    const display = document.getElementById('hardware-fit-msg');
+                                    if (display) {
+                                        display.innerText = status.message;
+                                        display.style.color = color;
+                                    }
+                                } finally {
+                                    btn.innerText = originalText;
+                                    btn.disabled = false;
+                                }
+                            }}>Test Fit</button>
+                        </div>
+                    </div>
+
+                    <div className="divider" />
+
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", fontSize: "10px" }}>
+                        <div style={{ color: "var(--color-gray)" }}>Standard: <strong style={{ color: "var(--color-bright)" }}>Qwen 2.5 Coder</strong></div>
+                        <a href="https://ollama.com/download" target="_blank" style={{ color: "var(--color-blue)", textDecoration: "none", fontWeight: "600" }}>Get Ollama ↗</a>
+                    </div>
+                </div>
+            </div> as HTMLElement
+
+            nextContentRows.push(<div className="split-row">{info}{config}</div> as HTMLElement)
         } else {
-            content.appendChild(ConfigCard({ providerId: id }))
+            nextContentRows.push(ConfigCard({ providerId: id }))
         }
+
+        content.innerHTML = ""
+        nextContentRows.forEach(row => content.appendChild(row))
+
+        // 3. Update Footer
+        footerSlot.innerHTML = ""
+        footerSlot.appendChild(
+            <div className="footer">
+                <button onclick={async () => {
+                    if (await Dialogs.approve({ message: "Reset Odie Wizard and clear all settings?" })) {
+                        service.ai.resetWizard();
+                        location.reload()
+                    }
+                }} style={{ color: "var(--color-red)", background: "transparent", border: "none", fontSize: "11px", cursor: "pointer", opacity: "0.7" }}>Reset Wizard</button>
+                <button onclick={onBack} className="btn-primary">Done</button>
+            </div> as HTMLElement
+        )
     }
 
     render()

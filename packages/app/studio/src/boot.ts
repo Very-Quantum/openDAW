@@ -66,18 +66,18 @@ export const boot = async ({ workersUrl, workletsUrl, offlineEngineUrl }: {
     console.debug("requesting custom sampleRate", sampleRate ?? "'No (Firefox)'")
     const context = new AudioContext({ sampleRate, latencyHint: 0 })
     console.debug(`AudioContext state: ${context.state}, sampleRate: ${context.sampleRate}`)
-    console.debug("boot: step 6 - create audio worklets (context)")
+    console.debug("boot: step 5 - create audio worklets (context)")
     const audioWorklets = await Promises.tryCatch(AudioWorklets.createFor(context))
     if (audioWorklets.status === "rejected") {
         return panic(audioWorklets.error)
     }
-    console.debug("boot: step 7 - wait for resume if suspended")
+    console.debug("boot: step 6 - wait for resume if suspended")
     if (context.state === "suspended") {
         window.addEventListener("click",
             async () => await context.resume().then(() =>
                 console.debug(`AudioContext resumed (${context.state})`)), { capture: true, once: true })
     }
-    console.debug("boot: step 8 - audio devices")
+    console.debug("boot: step 7 - audio devices")
     const audioDevices = await AudioOutputDevice.create(context)
     const sampleManager = new GlobalSampleLoaderManager({
         fetch: async (uuid: UUID.Bytes, progress: Progress.Handler): Promise<[AudioData, SampleMetaData]> =>
