@@ -85,17 +85,31 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
 
     const ConfigCard = ({ providerId, overrides }: { providerId: string, overrides?: any }) => {
         const provider = service.ai.getProvider(providerId)
-        if (!provider) return <div className="error">Provider not found</div>
 
-        const config = service.ai.getConfig(providerId)
-        const title = overrides?.title || provider.manifest.name
-        const desc = overrides?.desc || provider.manifest.description
+        // [ANTIGRAVITY] Robust Fallback: Never show a blank page.
+        // If the provider fails to load, we substitute a "Ghost" provider to keep the UI structure intact.
+        const safeProvider = provider || {
+            id: providerId,
+            manifest: { name: "Provider Error", description: "This provider could not be loaded." },
+            requiresUrl: false,
+            requiresKey: false,
+            validate: async () => ({ ok: false, message: "System Error: Provider implementation missing." })
+        } as any
+
+        const config = service.ai.getConfig(providerId) || {}
+        const title = overrides?.title || safeProvider.manifest.name
+        const desc = overrides?.desc || safeProvider.manifest.description
         const validationSlot = <div className="validation-area"></div> as HTMLElement
+
+        // If real provider is missing, show localized error immediately
+        if (!provider) {
+            validationSlot.appendChild(ConnectionStatus({ status: 'error', message: "System Warning: Provider not found in registry." }))
+        }
 
         const saveConfig = () => {
             const lib = config.keyLibrary || []
             if (lib.length > 0) config.apiKey = lib[0]
-            service.ai.setConfig(provider.id, { ...config })
+            service.ai.setConfig(providerId, { ...config })
             render()
         }
 
@@ -105,45 +119,30 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
             const newConfig = { ...config }
             if (tempKey !== undefined) newConfig.apiKey = tempKey
             if (tempUrl !== undefined) newConfig.baseUrl = tempUrl
-            service.ai.setConfig(provider.id, newConfig)
+            service.ai.setConfig(providerId, newConfig)
 
-            if (provider.validate) {
-                const res = await provider.validate()
-                const result = { status: res.ok ? 'success' : 'error', message: res.message, models: [] as string[] }
+            if (safeProvider.validate) {
+                const res = await safeProvider.validate()
+                validationSlot.innerHTML = ""
+                validationSlot.appendChild(ConnectionStatus({ status: res.ok ? 'success' : 'error', message: res.message }))
 
-                if (res.ok && provider.fetchModels) {
-                    result.models = await provider.fetchModels()
+                if (res.ok && safeProvider.fetchModels) {
+                    const models = await safeProvider.fetchModels()
+                    if (models.length > 0) {
+                        validationSlot.appendChild(
+                            <div className="input-row" style={{ marginTop: "12px" }}>
+                                <label className="label">Active Model</label>
+                                <select className="settings-input native" style={{ margin: "0", flex: "1" }} onchange={(e: any) => { config.modelId = (e.target as HTMLSelectElement).value; saveConfig() }}>
+                                    {models.map((m: string) => <option value={m} selected={m === config.modelId}>{m}</option>)}
+                                </select>
+                            </div>
+                        )
+                    }
                 }
-
-                validationResults.set(providerId, result)
-                renderValidationResult(result)
             }
         }
 
-        const renderValidationResult = (result: { status: any, message: string, models?: string[] }) => {
-            validationSlot.innerHTML = ""
-            validationSlot.appendChild(ConnectionStatus({ status: result.status, message: result.message }))
-
-            if (result.status === 'success' && result.models && result.models.length > 0) {
-                validationSlot.appendChild(
-                    <div className="input-row" style={{ marginTop: "12px" }}>
-                        <label className="label">Active Model</label>
-                        <select className="settings-input native" style={{ margin: "0", flex: "1" }} onchange={(e: any) => { config.modelId = (e.target as HTMLSelectElement).value; saveConfig() }}>
-                            {result.models.map(m => <option value={m} selected={m === config.modelId}>{m}</option>)}
-                        </select>
-                    </div>
-                )
-            }
-        }
-
-        const cachedResult = validationResults.get(providerId)
-        if (cachedResult) renderValidationResult(cachedResult)
-
-        const currentCheckKey = `${config.apiKey}|${config.baseUrl}|${config.modelId}`
-        if (!isEmbedded && lastValidatedConfig.get(providerId) !== currentCheckKey) {
-            lastValidatedConfig.set(providerId, currentCheckKey)
-            setTimeout(() => runValidation(), 0)
-        }
+        if (!isEmbedded && provider) setTimeout(() => runValidation(), 0)
         const isActive = service.ai.activeProviderId.getValue() === providerId
 
         return <div className={`config-card ${isActive ? 'active-brain' : ''}`} style={{ border: "none", background: "none", padding: "0" }}>
@@ -156,7 +155,7 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
             </div>
 
             <div className="settings-grid">
-                {provider.requiresUrl && (
+                {safeProvider.requiresUrl && (
                     <div className="input-row">
                         <label className="label">Endpoint URL</label>
                         <input type="text" value={config.baseUrl || ""} className="settings-input native" style={{ flex: "1", margin: "0" }}
@@ -164,9 +163,9 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
                     </div>
                 )}
 
-                {provider.requiresKey && (
+                {safeProvider.requiresKey && (
                     providerId === 'gemini-3' ? (
-                        <KeyRingEditor config={config} provider={provider} save={saveConfig} />
+                        <KeyRingEditor config={config} provider={safeProvider} save={saveConfig} />
                     ) : (
                         <div className="input-row">
                             <label className="label">Active Key</label>
@@ -183,10 +182,11 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
 
                 {validationSlot}
 
-                {provider.id === "gemini-3" && [
+                {/* Only show extra controls if it's the real Gemini provider */}
+                {providerId === "gemini-3" && [
                     <div className="divider" />,
-                    renderThinkingControl(config, provider.id),
-                    renderMediaResolutionControl(config, provider.id)
+                    renderThinkingControl(config, providerId),
+                    renderMediaResolutionControl(config, providerId)
                 ]}
             </div>
         </div>
@@ -230,15 +230,6 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
     }
 
     // -- RENDER ENGINE --
-    const headerSlot = <div className="header-slot" style={{ width: "100%" }}></div> as HTMLElement
-    const footerSlot = <div className="footer-slot" style={{ width: "100%" }}></div> as HTMLElement
-
-    container.appendChild(headerSlot)
-    container.appendChild(content)
-    container.appendChild(footerSlot)
-
-    const lastValidatedConfig = new Map<string, string>()
-    const validationResults = new Map<string, { status: any, message: string, models?: string[] }>()
 
     const renderHeader = () => {
         const activeId = service.ai.activeProviderId.getValue()
@@ -269,14 +260,25 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
     }
 
     const render = () => {
+        container.innerHTML = ""
+        container.appendChild(renderHeader())
+        container.appendChild(content)
+
+        const footer = <div className="footer">
+            <button onclick={async () => {
+                if (await Dialogs.approve({ message: "Reset Odie Wizard and clear all settings?" })) {
+                    service.ai.resetWizard();
+                    location.reload()
+                }
+            }} style={{ color: "var(--color-red)", background: "transparent", border: "none", fontSize: "11px", cursor: "pointer", opacity: "0.7" }}>Reset Wizard</button>
+            <button onclick={onBack} className="btn-primary">Done</button>
+        </div> as HTMLElement
+
+        container.appendChild(footer)
+
+        // Render Active Content
+        content.innerHTML = ""
         const id = service.ai.activeProviderId.getValue()
-
-        // 1. Update Header
-        headerSlot.innerHTML = ""
-        headerSlot.appendChild(renderHeader())
-
-        // 2. Build Content
-        const nextContentRows: HTMLElement[] = []
         if (id === "gemini-3") {
             const info = <div className="guide-col">
                 <div className="info-guide" style={{ padding: "16px", background: "rgba(var(--color-accent-rgb), 0.05)", borderRadius: "8px", border: "1px solid rgba(var(--color-accent-rgb), 0.1)" }}>
@@ -306,7 +308,12 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
                 {ConfigCard({ providerId: id })}
             </div> as HTMLElement
 
-            nextContentRows.push(<div className="split-row">{info}{config}</div> as HTMLElement)
+            const row = <div className="split-row">
+                {info}
+                {config}
+            </div> as HTMLElement
+
+            content.appendChild(row)
         } else if (id.includes("ollama")) {
             const provider = service.ai.getProvider(id)!
             const info = <div className="guide-col">
@@ -374,27 +381,15 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
                 </div>
             </div> as HTMLElement
 
-            nextContentRows.push(<div className="split-row">{info}{config}</div> as HTMLElement)
-        } else {
-            nextContentRows.push(ConfigCard({ providerId: id }))
-        }
-
-        content.innerHTML = ""
-        nextContentRows.forEach(row => content.appendChild(row))
-
-        // 3. Update Footer
-        footerSlot.innerHTML = ""
-        footerSlot.appendChild(
-            <div className="footer">
-                <button onclick={async () => {
-                    if (await Dialogs.approve({ message: "Reset Odie Wizard and clear all settings?" })) {
-                        service.ai.resetWizard();
-                        location.reload()
-                    }
-                }} style={{ color: "var(--color-red)", background: "transparent", border: "none", fontSize: "11px", cursor: "pointer", opacity: "0.7" }}>Reset Wizard</button>
-                <button onclick={onBack} className="btn-primary">Done</button>
+            const row = <div className="split-row">
+                {info}
+                {config}
             </div> as HTMLElement
-        )
+
+            content.appendChild(row)
+        } else {
+            content.appendChild(ConfigCard({ providerId: id }))
+        }
     }
 
     render()

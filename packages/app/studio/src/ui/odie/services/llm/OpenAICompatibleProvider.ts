@@ -614,7 +614,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
                     try {
                         const controller3 = new AbortController()
-                        const timeout3 = setTimeout(() => controller3.abort(), 2000) // Fast fail
+                        const timeout3 = setTimeout(() => controller3.abort(), 5000) // [ANTIGRAVITY] Increased to 5s to avoid flakiness
                         const res = await fetch(fallbackUrl, { signal: controller3.signal })
                         clearTimeout(timeout3)
 

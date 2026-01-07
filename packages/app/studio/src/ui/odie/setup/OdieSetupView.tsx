@@ -353,7 +353,7 @@ export const OdieSetupView = ({ service }: { service: OdieService }) => {
                             <div style={{ display: "flex", flexDirection: "column", gap: "1.5rem" }}>
                                 <div className="form-group">
                                     <label>My Name Is</label>
-                                    <TextInput lifecycle={lifecycle} model={nameModel} placeholder="Simon LeBon" />
+                                    <TextInput lifecycle={lifecycle} model={nameModel} />
                                 </div>
 
                                 <Button lifecycle={lifecycle}
@@ -434,7 +434,7 @@ export const OdieSetupView = ({ service }: { service: OdieService }) => {
                                             <div style={{ maxWidth: "600px" }}>
                                                 <div className="form-group">
                                                     <label>Name / Alias</label>
-                                                    <TextInput lifecycle={lifecycle} model={nameModel} placeholder="Simon LeBon" />
+                                                    <TextInput lifecycle={lifecycle} model={nameModel} />
                                                 </div>
 
                                                 <div className="form-group">
@@ -468,7 +468,7 @@ export const OdieSetupView = ({ service }: { service: OdieService }) => {
                                                     <input type="text"
                                                         value={dna.identity.location}
                                                         onChange={(e: any) => userService.update({ identity: { ...dna.identity, location: e.target.value } })}
-                                                        placeholder="Planet Earth"
+                                                        placeholder="Where are you based?"
                                                         style={{ width: "100%", padding: "8px", background: "var(--color-bg-3)", border: "1px solid var(--color-edge)", color: "white", borderRadius: "4px" }}
                                                     />
                                                 </div>

@@ -21,7 +21,7 @@ export interface UserIdentity {
 
 export interface UserDNA {
     name: string
-    avatar?: string // Base64 image
+    avatar?: string
     identity: UserIdentity
     level: UserLevel
     sonicFingerprint: SonicFingerprint
@@ -32,12 +32,11 @@ export interface UserDNA {
 
 const DEFAULT_DNA: UserDNA = {
     name: "",
-    avatar: "",
     identity: { role: "producer", location: "" },
     level: "intermediate",
-    sonicFingerprint: { primaryGenre: "Electronic", secondaryGenres: [], vibeKeywords: [] },
+    sonicFingerprint: { primaryGenre: "", secondaryGenres: [], vibeKeywords: [] },
     techRider: { daw: "OpenDAW", integrations: [], workflow: "in-the-box" },
-    goals: ["Create great music"],
+    goals: [],
     influences: []
 }
 
@@ -80,7 +79,7 @@ export class UserService {
         const d = this.dna.getValue()
         return `
 ### 👤 User Profile (The Artist Passport):
-- **Artist**: ${d.name} (${d.identity.role} based in ${d.identity.location}) ${d.avatar ? '[Photo Configured]' : ''}
+- **Artist**: ${d.name} (${d.identity.role} based in ${d.identity.location})
 - **Sonic Fingerprint**: ${d.sonicFingerprint.primaryGenre} | Vibes: ${d.sonicFingerprint.vibeKeywords.join(", ")}
 - **Studio Rig**: ${d.techRider.workflow} with ${d.techRider.integrations.join(", ")}
 - **Experience Level**: ${d.level.toUpperCase()}

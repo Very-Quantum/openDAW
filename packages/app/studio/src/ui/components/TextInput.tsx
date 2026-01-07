@@ -9,19 +9,13 @@ type Construct = {
     lifecycle: Lifecycle
     model: MutableObservableValue<string>
     className?: string
-    maxChars?: int
     placeholder?: string
+    maxChars?: int
 }
 
-export const TextInput = ({ lifecycle, model, className, maxChars, placeholder }: Construct) => {
+export const TextInput = ({ lifecycle, model, className, placeholder, maxChars }: Construct) => {
     maxChars ??= 127
-    const input: HTMLElement = (<div contentEditable="true" style={{ width: "100%" }} />)
-
-    // Set placeholder attribute on the inner div
-    if (placeholder) {
-        input.setAttribute("data-placeholder", placeholder)
-    }
-
+    const input: HTMLElement = (<div contentEditable="true" data-placeholder={placeholder} style={{ width: "100%" }} />)
     const element: HTMLElement = (
         <div className={Html.buildClassList(defaultClassName, className)}>
             {input}

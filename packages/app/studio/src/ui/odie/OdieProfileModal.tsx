@@ -1,21 +1,22 @@
-import css from "./OdieProfileModal.sass?inline"
-import defaultAvatar from "./assets/default_avatar.png"
+import css from "./OdieProfile_v2.sass?inline"
 
 import { createElement } from "@opendaw/lib-jsx"
 import { OdieModalFrame } from "./components/OdieModalFrame"
 import { userService } from "./services/UserService"
-
 import { DefaultObservableValue, ObservableValue, Terminator } from "@opendaw/lib-std"
 import { Button } from "@/ui/components/Button"
 import { TextInput } from "@/ui/components/TextInput"
 import { Colors } from "@opendaw/studio-enums"
 import { Html } from "@opendaw/lib-dom"
+import DefaultAvatarImg from "./assets/default_avatar_placeholder.png"
 
 const className = Html.adoptStyleSheet(css, "OdieProfileModal")
 
 export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
     // -- STATE --
     const lifecycle = new Terminator()
+
+    // Optimistic Models (synced back to service)
     const nameModel = new DefaultObservableValue<string>(userService.dna.getValue().name)
     const locationModel = new DefaultObservableValue<string>(userService.dna.getValue().identity.location)
     const genreModel = new DefaultObservableValue<string>(userService.dna.getValue().sonicFingerprint.primaryGenre)
@@ -33,24 +34,22 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
     lifecycle.own(vibesModel.subscribe((v: ObservableValue<string>) => userService.update({ sonicFingerprint: { ...userService.dna.getValue().sonicFingerprint, vibeKeywords: v.getValue().split(",").map(s => s.trim()) } })))
     lifecycle.own(influencesModel.subscribe((v: ObservableValue<string>) => userService.update({ influences: v.getValue().split(",").map(s => s.trim()) })))
 
-    const handleFileChange = (e: any) => {
-        const file = e.target.files[0]
-        if (!file) return
-
-        const reader = new FileReader()
-        reader.onload = (event: any) => {
-            userService.update({ avatar: event.target.result })
-            render() // Force refresh side effects
-        }
-        reader.readAsDataURL(file)
-    }
-
-    const fileInput = <input type="file" accept="image/*" style={{ display: "none" }} onchange={handleFileChange} /> as HTMLInputElement
-
-    // We need a simple re-render mechanic for tabs
     const container = <div className={Html.buildClassList(className, "layout")}></div> as HTMLElement
 
-    // Reactive binding: We read generic DNA, but writes go to UserService
+    // File Input for Avatar
+    const fileInput = <input type="file" accept="image/png, image/jpeg" style={{ display: "none" }} /> as HTMLInputElement
+    fileInput.onchange = (e: any) => {
+        const file = e.target.files[0]
+        if (file) {
+            const reader = new FileReader()
+            reader.onload = (evt) => {
+                userService.update({ avatar: evt.target?.result as string })
+                render() // Force re-render to show new avatar
+            }
+            reader.readAsDataURL(file)
+        }
+    }
+
     const getDna = () => userService.dna.getValue()
 
     const render = () => {
@@ -71,42 +70,60 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
 
         // -- TABS CONTENT --
         let tabContent
+
         if (activeTab === "overview") {
+            const hasName = dna.name.trim().length > 0
+            const displayRole = dna.identity.role.charAt(0).toUpperCase() + dna.identity.role.slice(1).replace("_", " ")
+            const displayGenre = dna.sonicFingerprint.primaryGenre || "Unknown Genre"
+            const influences = dna.influences.slice(0, 3).join(", ") || "None Listed"
+
             tabContent = <div className="overview-tab">
-                <div className="passport-card">
-                    <div className="card-header">
-                        <div className="card-avatar" style={dna.avatar ? { backgroundImage: `url(${dna.avatar})` } : { backgroundImage: `url(${defaultAvatar})` }}></div>
-                        <div className="card-main-info">
-                            <div className="card-name">{dna.name || "UNNAMED ARTIST"}</div>
-                            <div className="card-sub">{dna.identity.role.toUpperCase()} • {dna.identity.location || "PLANET EARTH"}</div>
+                <div className="passport-card" style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                    <div className="passport-header">
+                        <div className="passport-id" style={{ opacity: 0.5 }}>ODIE-ID: {Math.random().toString(36).substr(2, 9).toUpperCase()}</div>
+                        <div className="passport-status">STATUS: ACTIVE</div>
+                    </div>
+                    <div className="passport-body" style={{ flex: 1 }}>
+                        <div className="passport-photo">
+                            <div className="photo-frame" style={{
+                                backgroundImage: `url(${dna.avatar || DefaultAvatarImg})`
+                            }}></div>
+                        </div>
+                        <div className="passport-details">
+                            <div className="detail-row main">
+                                <div className="detail-label">IDENTITY</div>
+                                <div className="detail-value highlight" style={{ fontSize: "24px" }}>{hasName ? dna.name : "ANONYMOUS PRODUCER"}</div>
+                            </div>
+                            <div className="detail-grid" style={{ gridTemplateColumns: "1fr 1fr 1fr", gap: "24px" }}>
+                                <div className="detail-row">
+                                    <div className="detail-label">ROLE</div>
+                                    <div className="detail-value">{displayRole}</div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-label">LEVEL</div>
+                                    <div className="detail-value">{dna.level.toUpperCase()}</div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-label">LOCATION</div>
+                                    <div className="detail-value">{dna.identity.location || "Unknown"}</div>
+                                </div>
+                            </div>
+                            <div className="detail-grid" style={{ marginTop: "24px" }}>
+                                <div className="detail-row">
+                                    <div className="detail-label">SONIC FINGERPRINT</div>
+                                    <div className="detail-value" style={{ color: Colors.blue }}>{displayGenre}</div>
+                                </div>
+                                <div className="detail-row">
+                                    <div className="detail-label">TOP INFLUENCES</div>
+                                    <div className="detail-value" style={{ opacity: 0.8 }}>{influences}</div>
+                                </div>
+                            </div>
                         </div>
                     </div>
-
-                    <div className="card-stats">
-                        <div className="stat-item">
-                            <label>Experience</label>
-                            <div className="value">{dna.level.toUpperCase()}</div>
-                        </div>
-                        <div className="stat-item">
-                            <label>Primary Genre</label>
-                            <div className="value">{dna.sonicFingerprint.primaryGenre || "Unknown"}</div>
-                        </div>
-                        <div className="stat-item">
-                            <label>Workflow</label>
-                            <div className="value">{dna.techRider.workflow.replace("-", " ").toUpperCase()}</div>
-                        </div>
+                    <div className="passport-footer">
+                        <div className="barcode" style={{ opacity: 0.1 }}>||| || ||| || |||| |||</div>
+                        <div className="issued">ISSUED: 2026.01.07</div>
                     </div>
-
-                    <div className="card-footer">
-                        <div className="fingerprint-tags">
-                            {dna.sonicFingerprint.vibeKeywords.map(v => <span className="tag">{v}</span>)}
-                        </div>
-                    </div>
-                </div>
-
-                <div className="overview-hint">
-                    This is your <strong>Artist Passport</strong>. It defines how Odie understands your creative intent.
-                    Switch to other tabs to refine your profile.
                 </div>
             </div>
         }
@@ -114,7 +131,7 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
             tabContent = <div>
                 <div className="section">
                     <label className="label">Artist Name / Alias</label>
-                    <TextInput lifecycle={lifecycle} model={nameModel} placeholder="Simon LeBon" className="profile-input" />
+                    <TextInput lifecycle={lifecycle} model={nameModel} className="profile-input" placeholder="Simon LeBon" />
                 </div>
                 <div className="section">
                     <label className="label">Primary Role</label>
@@ -126,7 +143,7 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
                 </div>
                 <div className="section">
                     <label className="label">Location (City/Planet)</label>
-                    <TextInput lifecycle={lifecycle} model={locationModel} placeholder="Planet Earth" className="profile-input" />
+                    <TextInput lifecycle={lifecycle} model={locationModel} className="profile-input" placeholder="Planet Earth" />
                 </div>
                 <div className="section">
                     <label className="label">Experience Level</label>
@@ -145,15 +162,15 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
             tabContent = <div>
                 <div className="section">
                     <label className="label">Primary Genre</label>
-                    <TextInput lifecycle={lifecycle} model={genreModel} className="profile-input" />
+                    <TextInput lifecycle={lifecycle} model={genreModel} className="profile-input" placeholder="e.g. Synthpop" />
                 </div>
                 <div className="section">
                     <label className="label">Vibe Keywords (Comma separated)</label>
-                    <TextInput lifecycle={lifecycle} model={vibesModel} className="profile-input" />
+                    <TextInput lifecycle={lifecycle} model={vibesModel} className="profile-input" placeholder="e.g. Dark, Cinematic, Retro" />
                 </div>
                 <div className="section">
                     <label className="label">Key Influences</label>
-                    <TextInput lifecycle={lifecycle} model={influencesModel} className="profile-input" />
+                    <TextInput lifecycle={lifecycle} model={influencesModel} className="profile-input" placeholder="e.g. Depeche Mode, Kraftwerk" />
                 </div>
             </div>
         }
@@ -193,45 +210,43 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
         }
 
         // -- LAYOUT ASSEMBLY --
-        const avatarStyle = dna.avatar ? { backgroundImage: `url(${dna.avatar})` } : { backgroundImage: `url(${defaultAvatar})` }
-
-        // -- HOVER LOGIC --
-        let popperTimeout: any = null
-        const handleMouseEnter = () => {
-            if (popperTimeout) clearTimeout(popperTimeout)
-            showAvatarMenu$.setValue(true)
-        }
-        const handleMouseLeave = () => {
-            popperTimeout = setTimeout(() => {
-                showAvatarMenu$.setValue(false)
-            }, 300)
+        const showMenu = showAvatarMenu$.getValue()
+        const avatarStyle = {
+            backgroundImage: `url(${dna.avatar || DefaultAvatarImg})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            fontSize: '0'
         }
 
-        const avatarMenu = showAvatarMenu$.getValue() ? (
-            <div className="avatar-popper" onmouseenter={() => { if (popperTimeout) clearTimeout(popperTimeout) }} onmouseleave={handleMouseLeave}>
-                <div className="popper-arrow"></div>
-                <div className="popper-item" onclick={() => { showAvatarMenu$.setValue(false); fileInput.click(); }}>
-                    <div className="item-label">Upload Photo</div>
-                    <div className="item-hint">Supports PNG, JPG, WEBP</div>
-                </div>
-
-            </div>
-        ) : null
-
-        const avatar = <div className="avatar-wrap" onmouseenter={handleMouseEnter} onmouseleave={handleMouseLeave}>
+        const avatarSection = <div
+            className="avatar-container"
+            onmouseenter={() => showAvatarMenu$.setValue(true)}
+            onmouseleave={() => showAvatarMenu$.setValue(false)}
+        >
             <div className="avatar" style={avatarStyle}>
-                <div className="avatar-overlay">Change</div>
             </div>
-            {avatarMenu}
+
+            {showMenu && <div className="avatar-menu">
+                <div className="menu-item" onclick={() => fileInput.click()}>
+                    <div className="label">Upload Photo</div>
+                    <div className="sub">JPG/PNG (Max 2MB)</div>
+                </div>
+                {dna.avatar && <div className="menu-item delete" onclick={() => {
+                    userService.update({ avatar: undefined })
+                    render()
+                }}>
+                    <div className="label">Remove</div>
+                </div>}
+            </div>}
         </div>
 
         const info = <div>
-            <div className="info-name">{dna.name}</div>
+            <div className="info-name">{dna.name || "Anonymous"}</div>
             <div className="info-level">{dna.level.toUpperCase()}</div>
         </div>
 
         const sidebar = <div className="sidebar">
-            {avatar}
+            {avatarSection}
             {info}
 
             <div className="nav-list">
@@ -241,42 +256,26 @@ export const OdieProfileModal = ({ onClose }: { onClose: () => void }) => {
                 {renderTabBtn("studio", "Tech Rider")}
                 {renderTabBtn("goals", "Goals")}
             </div>
-
-            <div className="action-area">
-                <Button
-                    lifecycle={lifecycle}
-                    appearance={{ framed: true, color: Colors.blue }}
-                    /* Style override is needed for Button wrapper specific width */
-                    style={{ width: "100%", padding: "12px", height: "40px" }}
-                    onClick={() => alert("Odie Interview Mode coming soon! Chat with Odie to auto-fill this.")}>
-                    Interview Me
-                </Button>
-            </div>
         </div> as HTMLElement
 
         // Main Content Area
         const main = <div className="main">
-            <h2>
-                {activeTab === "overview" && "Passport Overview"}
+            {activeTab !== "overview" && <h2>
                 {activeTab === "identity" && "Artist Identity"}
                 {activeTab === "sound" && "Sonic Fingerprint"}
                 {activeTab === "studio" && "Technical Rider"}
                 {activeTab === "goals" && "Career Goals"}
-            </h2>
+            </h2>}
             {tabContent}
         </div> as HTMLElement
 
         container.appendChild(sidebar)
-        container.appendChild(fileInput)
         container.appendChild(main)
     }
-
-
 
     // Reactive Refresh
     lifecycle.own(activeTab$.subscribe(() => render()))
     lifecycle.own(showAvatarMenu$.subscribe(() => render()))
-    // Also re-render if user details change (which they do via the updates)
 
     // Initial Render
     render()
