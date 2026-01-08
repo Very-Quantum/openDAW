@@ -564,82 +564,78 @@ export class OdieAppControl {
 
     async addMidiNotes(trackName: string, notes: MidiNoteDef[]): Promise<ToolResult> {
         // 1. Find the Track
-        return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
-            some: async (adapter) => {
-                // START ROBUST TRACK FINDING
-                const track = this.findFirstTrack(adapter)
-                if (!track) return { success: false, reason: `Track "${trackName}" has no note lanes (Robust Search Failed).` }
+        // 1. Find the Track
+        const adapterMeta = this.findAudioUnitAdapter(trackName)
+        if (adapterMeta.isEmpty()) return { success: false, reason: `Track "${trackName}" not found` }
+        const adapter = adapterMeta.unwrap()
 
-                try {
-                    // 2. Determine target clip (Simplification: Use the first one found or fail for now)
-                    if (notes.length === 0) return { success: true }
+        const track = this.findFirstTrack(adapter)
+        if (!track) return { success: false, reason: `Track "${trackName}" has no note lanes (Robust Search Failed).` }
 
-                    // Time conversion: 1 Bar = 4.0 PPQN (assuming 4/4)
-                    const firstNoteTime = (notes[0].startTime - 1) * 4.0
+        try {
+            // 2. Determine target clip (Simplification: Use the first one found or fail for now)
+            if (notes.length === 0) return { success: true }
 
-                    let region = track.regions.collection.asArray()
-                        .find((r: any) => r instanceof NoteRegionBoxAdapter && r.position <= firstNoteTime && r.complete > firstNoteTime) as NoteRegionBoxAdapter | undefined
+            // Time conversion: 1 Bar = 4.0 PPQN (assuming 4/4)
+            const firstNoteTime = (notes[0].startTime - 1) * 4.0
 
-                    if (!region) {
-                        // Try to Create a Clip (MVP: 4 bar clip at target)
-                        const start = Math.floor(firstNoteTime / 4) * 4 // Quantize to bar
-                        const duration = 16.0 // 4 bars
+            let region = track.regions.collection.asArray()
+                .find((r: any) => r instanceof NoteRegionBoxAdapter && r.position <= firstNoteTime && r.complete > firstNoteTime) as NoteRegionBoxAdapter | undefined
 
+            if (!region) {
+                // Try to Create a Clip (MVP: 4 bar clip at target)
+                const start = Math.floor(firstNoteTime / 4) * 4 // Quantize to bar
+                const duration = 16.0 // 4 bars
 
+                // Create Clip Logic
+                this.studio.project.editing.modify(() => {
+                    // CRITICAL FIX: Must create Event Collection and link it to the Region Box
+                    // otherwise "box.events" pointer is dangling, causing Graph Crash.
+                    const collection = NoteEventCollectionBox.create(this.studio.project.boxGraph, UUID.generate())
 
-                        // Create Clip Logic
-                        this.studio.project.editing.modify(() => {
-                            // CRITICAL FIX: Must create Event Collection and link it to the Region Box
-                            // otherwise "box.events" pointer is dangling, causing Graph Crash.
-                            const collection = NoteEventCollectionBox.create(this.studio.project.boxGraph, UUID.generate())
-
-                            NoteRegionBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
-                                box.position.setValue(start)
-                                box.duration.setValue(duration)
-                                box.loopDuration.setValue(duration)
-                                box.regions.refer(track.box.regions)
-                                box.events.refer(collection.owners) // Link to events!
-                            })
-                        })
-
-                        // Verify creation
-                        // Refetch to get adapter
-                        region = track.regions.collection.asArray()
-                            .find((r: any) => r instanceof NoteRegionBoxAdapter && r.position === start) as NoteRegionBoxAdapter
-                    }
-                    if (!region) return { success: false, reason: `No MIDI region found at time ${notes[0].startTime} and failed to create one.` }
-
-                    // --- STEP 3: Add Notes ---
-                    this.studio.project.editing.modify(() => {
-                        const collection = region!.optCollection.unwrap()
-                        const regionPos = region!.position
-                        console.log(`[Odie] Adding ${notes.length} notes to region at ${regionPos}`)
-
-
-                        this.studio.odieEvents.notify({ type: "region-created", track: trackName, time: regionPos })
-
-                        notes.forEach(note => {
-                            const start = ((note.startTime - 1) * 4.0) - regionPos
-                            const duration = note.duration * 4.0
-                            collection.createEvent({
-                                position: start,
-                                duration: duration,
-                                pitch: note.pitch,
-                                velocity: note.velocity / 127.0,
-                                chance: 127,
-                                playCount: 0,
-                                cent: 0
-                            })
-                        })
+                    NoteRegionBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
+                        box.position.setValue(start)
+                        box.duration.setValue(duration)
+                        box.loopDuration.setValue(duration)
+                        box.regions.refer(track.box.regions)
+                        box.events.refer(collection.owners) // Link to events!
                     })
+                })
 
-                    return { success: true, message: `Added ${notes.length} notes` }
-                } catch (e: any) {
-                    return { success: false, reason: `addMidiNotes failed: ${e.message}` }
-                }
-            },
-            none: () => Promise.resolve({ success: false, reason: `Track "${trackName}" not found` })
-        })
+                // Verify creation
+                // Refetch to get adapter
+                region = track.regions.collection.asArray()
+                    .find((r: any) => r instanceof NoteRegionBoxAdapter && r.position === start) as NoteRegionBoxAdapter
+            }
+            if (!region) return { success: false, reason: `No MIDI region found at time ${notes[0].startTime} and failed to create one.` }
+
+            // --- STEP 3: Add Notes ---
+            this.studio.project.editing.modify(() => {
+                const collection = region!.optCollection.unwrap()
+                const regionPos = region!.position
+                console.log(`[Odie] Adding ${notes.length} notes to region at ${regionPos}`)
+
+                this.studio.odieEvents.notify({ type: "region-created", track: trackName, time: regionPos })
+
+                notes.forEach(note => {
+                    const start = ((note.startTime - 1) * 4.0) - regionPos
+                    const duration = note.duration * 4.0
+                    collection.createEvent({
+                        position: start,
+                        duration: duration,
+                        pitch: note.pitch,
+                        velocity: note.velocity / 127.0,
+                        chance: 127,
+                        playCount: 0,
+                        cent: 0
+                    })
+                })
+            })
+
+            return { success: true, message: `Added ${notes.length} notes` }
+        } catch (e: any) {
+            return { success: false, reason: `addMidiNotes failed: ${e.message}` }
+        }
     }
 
     async addAutomationPoint(trackName: string, param: "volume" | "pan", time: number, value: number): Promise<ToolResult> {
@@ -1551,83 +1547,82 @@ export class OdieAppControl {
      * @param effectType - "compressor" | "delay" | "reverb" | "crusher" | "stereo"
      */
     async addEffect(trackName: string, effectType: string): Promise<ToolResult> {
-        return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
-            some: async (adapter) => {
-                let BoxClass: any
-                switch (effectType.toLowerCase()) {
-                    case 'compressor': BoxClass = CompressorDeviceBox; break;
-                    case 'delay': BoxClass = DelayDeviceBox; break;
-                    case 'reverb':
-                    case 'cheap-reverb':
-                        BoxClass = ReverbDeviceBox; break;
-                    case 'dattorro':
-                    case 'dattorro-reverb':
-                        BoxClass = DattorroReverbDeviceBox; break;
-                    case 'crusher': BoxClass = CrusherDeviceBox; break;
-                    case 'stereo':
-                    case 'stereo-tool':
-                        BoxClass = StereoToolDeviceBox; break;
-                    case 'tidal': BoxClass = TidalDeviceBox; break;
-                    case 'revamp': BoxClass = RevampDeviceBox; break;
-                    case 'fold': BoxClass = FoldDeviceBox; break;
-                    case 'modular': BoxClass = ModularDeviceBox; break;
-                    default: return { success: false, reason: `Unknown effect type: ${effectType}` }
-                }
+        const adapterMeta = this.findAudioUnitAdapter(trackName)
+        if (adapterMeta.isEmpty()) return { success: false, reason: "Track not found" }
+        const adapter = adapterMeta.unwrap()
 
-                try {
-                    this.studio.project.editing.modify(() => {
-                        let modularSetup: any
-                        if (effectType.toLowerCase() === 'modular') {
-                            // Full Modular stack per EffectFactories.ts
-                            modularSetup = ModularBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
-                                box.collection.refer(this.studio.project.rootBox.modularSetups)
-                                box.label.setValue("Modular")
-                            })
-                            const modularInput = ModularAudioInputBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
-                                box.attributes.collection.refer(modularSetup.modules)
-                                box.attributes.label.setValue("Modular Input")
-                                box.attributes.x.setValue(-256)
-                                box.attributes.y.setValue(32)
-                            })
-                            const modularOutput = ModularAudioOutputBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
-                                box.attributes.collection.refer(modularSetup.modules)
-                                box.attributes.label.setValue("Modular Output")
-                                box.attributes.x.setValue(256)
-                                box.attributes.y.setValue(32)
-                            })
-                            ModuleConnectionBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
-                                box.collection.refer(modularSetup.connections)
-                                box.source.refer(modularInput.output)
-                                box.target.refer(modularOutput.input)
-                            })
-                        }
-                        // Create and Link Effect
-                        BoxClass.create(this.studio.project.boxGraph, UUID.generate(), (box: any) => {
-                            // Bi-directional link
-                            if (box.host && adapter.box.audioEffects) {
-                                box.host.refer(adapter.box.audioEffects)
-                            }
-                            if (modularSetup && (box as any).modularSetup) {
-                                (box as any).modularSetup.refer(modularSetup.device)
-                            }
-                            box.label.setValue(effectType)
-                            // Deterministic Indexing
-                            if (box.index) {
-                                box.index.setValue(adapter.audioEffects.getMinFreeIndex())
-                            }
-                        })
+        let BoxClass: any
+        switch (effectType.toLowerCase()) {
+            case 'compressor': BoxClass = CompressorDeviceBox; break;
+            case 'delay': BoxClass = DelayDeviceBox; break;
+            case 'reverb':
+            case 'cheap-reverb':
+                BoxClass = ReverbDeviceBox; break;
+            case 'dattorro':
+            case 'dattorro-reverb':
+                BoxClass = DattorroReverbDeviceBox; break;
+            case 'crusher': BoxClass = CrusherDeviceBox; break;
+            case 'stereo':
+            case 'stereo-tool':
+                BoxClass = StereoToolDeviceBox; break;
+            case 'tidal': BoxClass = TidalDeviceBox; break;
+            case 'revamp': BoxClass = RevampDeviceBox; break;
+            case 'fold': BoxClass = FoldDeviceBox; break;
+            case 'modular': BoxClass = ModularDeviceBox; break;
+            default: return { success: false, reason: `Unknown effect type: ${effectType}` }
+        }
+
+        try {
+            this.studio.project.editing.modify(() => {
+                let modularSetup: any
+                if (effectType.toLowerCase() === 'modular') {
+                    // Full Modular stack per EffectFactories.ts
+                    modularSetup = ModularBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
+                        box.collection.refer(this.studio.project.rootBox.modularSetups)
+                        box.label.setValue("Modular")
                     })
-
-                    this.studio.odieEvents.notify({ type: "effect-added", track: trackName, effect: effectType })
-
-                    return { success: true, message: `Added ${effectType}` }
-
-                } catch (e: any) {
-                    return { success: false, reason: `addEffect error: ${e.message}` }
+                    const modularInput = ModularAudioInputBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
+                        box.attributes.collection.refer(modularSetup.modules)
+                        box.attributes.label.setValue("Modular Input")
+                        box.attributes.x.setValue(-256)
+                        box.attributes.y.setValue(32)
+                    })
+                    const modularOutput = ModularAudioOutputBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
+                        box.attributes.collection.refer(modularSetup.modules)
+                        box.attributes.label.setValue("Modular Output")
+                        box.attributes.x.setValue(256)
+                        box.attributes.y.setValue(32)
+                    })
+                    ModuleConnectionBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
+                        box.collection.refer(modularSetup.connections)
+                        box.source.refer(modularInput.output)
+                        box.target.refer(modularOutput.input)
+                    })
                 }
-            },
-            none: () => Promise.resolve({ success: false, reason: "Track not found" })
-        })
+                // Create and Link Effect
+                BoxClass.create(this.studio.project.boxGraph, UUID.generate(), (box: any) => {
+                    // Bi-directional link
+                    if (box.host && adapter.box.audioEffects) {
+                        box.host.refer(adapter.box.audioEffects)
+                    }
+                    if (modularSetup && (box as any).modularSetup) {
+                        (box as any).modularSetup.refer(modularSetup.device)
+                    }
+                    box.label.setValue(effectType)
+                    // Deterministic Indexing
+                    if (box.index) {
+                        box.index.setValue(adapter.audioEffects.getMinFreeIndex())
+                    }
+                })
+            })
+
+            this.studio.odieEvents.notify({ type: "effect-added", track: trackName, effect: effectType })
+
+            return { success: true, message: `Added ${effectType}` }
+
+        } catch (e: any) {
+            return { success: false, reason: `addEffect error: ${e.message}` }
+        }
     }
 
     /**
@@ -1636,164 +1631,161 @@ export class OdieAppControl {
      * @param effectType - "arpeggio" | "velocity" | "pitch"
      */
     async addMidiEffect(trackName: string, effectType: string): Promise<ToolResult> {
-        return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
-            some: async (adapter) => {
-                if (adapter.isBus) {
-                    return { success: false, reason: "MIDI effects can only be added to regular tracks, not Aux busses." }
-                }
-                let BoxClass: any
-                switch (effectType.toLowerCase()) {
-                    case 'arpeggio': BoxClass = ArpeggioDeviceBox; break;
-                    case 'velocity': BoxClass = VelocityDeviceBox; break;
-                    case 'pitch': BoxClass = PitchDeviceBox; break;
-                    case 'zeitgeist': BoxClass = ZeitgeistDeviceBox; break;
-                    default: return { success: false, reason: `Unknown MIDI effect type: ${effectType}` }
-                }
+        const adapterMeta = this.findAudioUnitAdapter(trackName)
+        if (adapterMeta.isEmpty()) return { success: false, reason: "Track not found" }
+        const adapter = adapterMeta.unwrap()
 
-                try {
-                    this.studio.project.editing.modify(() => {
-                        BoxClass.create(this.studio.project.boxGraph, UUID.generate(), (box: any) => {
-                            if (box.host && adapter.box.midiEffects) {
-                                box.host.refer(adapter.box.midiEffects)
-                                // Deterministic Indexing
-                                if (box.index) {
-                                    box.index.setValue(adapter.midiEffects.getMinFreeIndex())
-                                }
-                            } else {
-                                console.error("MIDI Effect creation failed: missing host/field wiring")
-                            }
-                        })
-                    })
+        if (adapter.isBus) {
+            return { success: false, reason: "MIDI effects can only be added to regular tracks, not Aux busses." }
+        }
+        let BoxClass: any
+        switch (effectType.toLowerCase()) {
+            case 'arpeggio': BoxClass = ArpeggioDeviceBox; break;
+            case 'velocity': BoxClass = VelocityDeviceBox; break;
+            case 'pitch': BoxClass = PitchDeviceBox; break;
+            case 'zeitgeist': BoxClass = ZeitgeistDeviceBox; break;
+            default: return { success: false, reason: `Unknown MIDI effect type: ${effectType}` }
+        }
 
-                    this.studio.odieEvents.notify({ type: "effect-added", track: trackName, effect: effectType })
+        try {
+            this.studio.project.editing.modify(() => {
+                BoxClass.create(this.studio.project.boxGraph, UUID.generate(), (box: any) => {
+                    if (box.host && adapter.box.midiEffects) {
+                        box.host.refer(adapter.box.midiEffects)
+                        // Deterministic Indexing
+                        if (box.index) {
+                            box.index.setValue(adapter.midiEffects.getMinFreeIndex())
+                        }
+                    } else {
+                        console.error("MIDI Effect creation failed: missing host/field wiring")
+                    }
+                })
+            })
 
-                    return { success: true, message: `Added MIDI ${effectType}` }
+            this.studio.odieEvents.notify({ type: "effect-added", track: trackName, effect: effectType })
 
-                } catch (e: any) {
-                    return { success: false, reason: `addMidiEffect error: ${e.message}` }
-                }
-            },
-            none: () => Promise.resolve({ success: false, reason: "Track not found" })
-        })
+            return { success: true, message: `Added MIDI ${effectType}` }
+
+        } catch (e: any) {
+            return { success: false, reason: `addMidiEffect error: ${e.message}` }
+        }
     }
 
     // --- STOP HERE ---
 
     async addNoteClip(trackName: string, label: string, notes: MidiNoteDef[]): Promise<ToolResult> {
-        return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
-            some: async (adapter) => {
-                const track = this.findFirstTrack(adapter)
+        const adapterMeta = this.findAudioUnitAdapter(trackName)
+        if (adapterMeta.isEmpty()) return { success: false, reason: `Track '${trackName}' not found` }
+        const adapter = adapterMeta.unwrap()
 
-                if (!track) return { success: false, reason: "No timeline track found on unit (Collection empty or unknown type)" }
+        const track = this.findFirstTrack(adapter)
 
-                // Get the actual Box from the Adapter
-                // track is likely TrackBoxAdapter, exposing .box
-                const trackBox = track.box
-                if (!trackBox) return { success: false, reason: "Track Adapter has no underlying Box" }
+        if (!track) return { success: false, reason: "No timeline track found on unit (Collection empty or unknown type)" }
 
-                const { editing, boxGraph } = this.studio.project
+        // Get the actual Box from the Adapter
+        // track is likely TrackBoxAdapter, exposing .box
+        const trackBox = track.box
+        if (!trackBox) return { success: false, reason: "Track Adapter has no underlying Box" }
 
-                editing.modify(() => {
-                    // 1. Calculate Bounds in Bars
-                    let minNoteBar = notes.length > 0 ? notes[0].startTime : 1
-                    let maxNoteBarEnd = notes.length > 0 ? (notes[0].startTime + notes[0].duration) : 2
-                    for (const n of notes) {
-                        if (n.startTime < minNoteBar) minNoteBar = n.startTime
-                        if ((n.startTime + n.duration) > maxNoteBarEnd) maxNoteBarEnd = (n.startTime + n.duration)
-                    }
+        const { editing, boxGraph } = this.studio.project
 
-                    // 2. Create Event Collection
-                    const eventCollection = NoteEventCollectionBox.create(boxGraph, UUID.generate())
+        editing.modify(() => {
+            // 1. Calculate Bounds in Bars
+            let minNoteBar = notes.length > 0 ? notes[0].startTime : 1
+            let maxNoteBarEnd = notes.length > 0 ? (notes[0].startTime + notes[0].duration) : 2
+            for (const n of notes) {
+                if (n.startTime < minNoteBar) minNoteBar = n.startTime
+                if ((n.startTime + n.duration) > maxNoteBarEnd) maxNoteBarEnd = (n.startTime + n.duration)
+            }
 
-                    // 3. Add Notes to Collection (using PPQN)
-                    for (const n of notes) {
-                        NoteEventBox.create(boxGraph, UUID.generate(), box => {
-                            box.events.refer(eventCollection.events)
-                            box.position.setValue(PPQN.fromSignature(n.startTime - 1, 1))
-                            box.duration.setValue(PPQN.fromSignature(n.duration, 1))
-                            box.pitch.setValue(n.pitch)
-                            box.velocity.setValue(n.velocity)
-                        })
-                    }
+            // 2. Create Event Collection
+            const eventCollection = NoteEventCollectionBox.create(boxGraph, UUID.generate())
 
-                    // 4. Create Region Box
-                    const regionUuid = UUID.generate()
-                    NoteRegionBox.create(boxGraph, regionUuid, box => {
-                        box.position.setValue(PPQN.fromSignature(minNoteBar - 1, 1))
-                        box.duration.setValue(PPQN.fromSignature(maxNoteBarEnd - minNoteBar, 1))
-                        box.label.setValue(label)
-
-                        box.events.refer(eventCollection.owners)
-
-                        if (trackBox.regions) {
-                            box.regions.refer(trackBox.regions)
-                        }
-                    })
+            // 3. Add Notes to Collection (using PPQN)
+            for (const n of notes) {
+                NoteEventBox.create(boxGraph, UUID.generate(), box => {
+                    box.events.refer(eventCollection.events)
+                    box.position.setValue(PPQN.fromSignature(n.startTime - 1, 1))
+                    box.duration.setValue(PPQN.fromSignature(n.duration, 1))
+                    box.pitch.setValue(n.pitch)
+                    box.velocity.setValue(n.velocity)
                 })
+            }
 
-                return { success: true, message: `Created Note Clip '${label}' on '${trackName}'` }
-            },
-            none: () => Promise.resolve({ success: false, reason: `Track '${trackName}' not found` })
+            // 4. Create Region Box
+            const regionUuid = UUID.generate()
+            NoteRegionBox.create(boxGraph, regionUuid, box => {
+                box.position.setValue(PPQN.fromSignature(minNoteBar - 1, 1))
+                box.duration.setValue(PPQN.fromSignature(maxNoteBarEnd - minNoteBar, 1))
+                box.label.setValue(label)
+
+                box.events.refer(eventCollection.owners)
+
+                if (trackBox.regions) {
+                    box.regions.refer(trackBox.regions)
+                }
+            })
         })
+
+        return { success: true, message: `Created Note Clip '${label}' on '${trackName}'` }
     }
 
     async addNote(trackName: string, pitch: number, start: number, duration: number, velocity: number): Promise<ToolResult> {
-        return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
-            some: async (adapter) => {
-                // 1. Convert 1-based Bars to PPQN
-                // Assuming 4/4 signature for simplified logic, or use PPQN helper
-                const ppqnStart = (start - 1) * 4
-                const ppqnDuration = duration * 4
+        const adapterMeta = this.findAudioUnitAdapter(trackName)
+        if (adapterMeta.isEmpty()) return { success: false, reason: `Track '${trackName}' not found` }
+        const adapter = adapterMeta.unwrap()
 
-                // 2. Find Target Region
-                // We use our helper findRegion (which expects PPQN)
-                // We need to look up the specific track lane (Values()[0]) usually
-                const track = this.findFirstTrack(adapter)
+        // 1. Convert 1-based Bars to PPQN
+        // Assuming 4/4 signature for simplified logic, or use PPQN helper
+        const ppqnStart = (start - 1) * 4
+        const ppqnDuration = duration * 4
 
-                if (!track) return { success: false, reason: "No track lane found." }
+        // 2. Find Target Region
+        // We use our helper findRegion (which expects PPQN)
+        // We need to look up the specific track lane (Values()[0]) usually
+        const track = this.findFirstTrack(adapter)
 
-                const regions = track.regions.collection.asArray() as any[]
-                const region = regions.find(r => r.position.getValue() <= ppqnStart && (r.position.getValue() + r.duration.getValue()) >= ppqnStart)
+        if (!track) return { success: false, reason: "No track lane found." }
 
-                if (!region) {
-                    // Option: Create a clip if none exists?
-                    // For now, fail as we expect a clip target.
-                    return { success: false, reason: `No clip found at bar ${start} on track '${trackName}'. Create a clip first.` }
-                }
+        const regions = track.regions.collection.asArray() as any[]
+        const region = regions.find(r => r.position.getValue() <= ppqnStart && (r.position.getValue() + r.duration.getValue()) >= ppqnStart)
 
-                if (!(region instanceof NoteRegionBoxAdapter)) {
-                    return { success: false, reason: "Target region is not a MIDI clip." }
-                }
+        if (!region) {
+            // Option: Create a clip if none exists?
+            // For now, fail as we expect a clip target.
+            return { success: false, reason: `No clip found at bar ${start} on track '${trackName}'. Create a clip first.` }
+        }
 
-                // 3. Inject Note
-                try {
-                    this.studio.project.editing.modify(() => {
-                        const eventCollection = region.optCollection.unwrap()
-                        // Local position within the region
-                        const localPosition = ppqnStart - region.position
+        if (!(region instanceof NoteRegionBoxAdapter)) {
+            return { success: false, reason: "Target region is not a MIDI clip." }
+        }
 
-                        // Create Note Event
-                        NoteEventBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
-                            // Fix: Refer to the underlying box's events pointer (or collection owners)
-                            box.events.refer(eventCollection.box.events)
-                            box.position.setValue(localPosition)
-                            box.duration.setValue(ppqnDuration)
-                            box.pitch.setValue(pitch)
-                            box.velocity.setValue(velocity)
-                        })
-                    })
+        // 3. Inject Note
+        try {
+            this.studio.project.editing.modify(() => {
+                const eventCollection = region.optCollection.unwrap()
+                // Local position within the region
+                const localPosition = ppqnStart - region.position
 
-                    this.studio.odieEvents.notify({ type: "note-added", track: trackName, pitch, start })
-                    return { success: true, message: `Added note ${pitch} to '${trackName}' at bar ${start}` }
+                // Create Note Event
+                NoteEventBox.create(this.studio.project.boxGraph, UUID.generate(), box => {
+                    // Fix: Refer to the underlying box's events pointer (or collection owners)
+                    box.events.refer(eventCollection.box.events)
+                    box.position.setValue(localPosition)
+                    box.duration.setValue(ppqnDuration)
+                    box.pitch.setValue(pitch)
+                    box.velocity.setValue(velocity)
+                })
+            })
+
+            this.studio.odieEvents.notify({ type: "note-added", track: trackName, pitch, start })
+            return { success: true, message: `Added note ${pitch} to '${trackName}' at bar ${start}` }
 
 
-                } catch (e: any) {
-                    console.error("addNote failed", e)
-                    return { success: false, reason: `addNote error: ${e.message}` }
-                }
-            },
-            none: () => Promise.resolve({ success: false, reason: `Track '${trackName}' not found` })
-        })
+        } catch (e: any) {
+            console.error("addNote failed", e)
+            return { success: false, reason: `addNote error: ${e.message}` }
+        }
     }
 
 
@@ -1858,42 +1850,41 @@ export class OdieAppControl {
         if (match.isEmpty()) return { success: false, reason: `No sample matching '${query}' found.` }
         const asset = match.unwrap()
 
-        return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
-            some: async (adapter) => {
-                const instrument = adapter.inputAdapter.match({
-                    some: input => input.type === "instrument" ? input : undefined,
-                    none: () => undefined
-                })
+        const adapterMeta = this.findAudioUnitAdapter(trackName)
+        if (adapterMeta.isEmpty()) return { success: false, reason: "Track not found" }
+        const adapter = adapterMeta.unwrap()
 
-                if (!instrument || !(instrument instanceof NanoDeviceBoxAdapter)) {
-                    return { success: false, reason: `No Nano instrument found on track '${trackName}'` }
-                }
-
-                const nano = instrument as NanoDeviceBoxAdapter
-                const { editing, boxGraph } = this.studio.project
-                const allSamples = await (this.studio.sampleService as any).collectAllFiles()
-                const fullAsset = allSamples.find((a: any) => a.uuid === asset.uuid)
-
-                editing.modify(() => {
-                    const fileUUID = UUID.parse(asset.uuid)
-                    const fileBox = boxGraph.findBox<AudioFileBox>(fileUUID)
-                        .unwrapOrElse(() => AudioFileBox.create(boxGraph, fileUUID, box => {
-                            box.fileName.setValue(asset.name)
-                            if (fullAsset) box.endInSeconds.setValue(fullAsset.duration)
-                        }))
-
-                    const oldAsset = nano.box.file.targetVertex.map(v => v.box)
-                    nano.box.file.refer(fileBox)
-
-                    if (oldAsset.nonEmpty() && oldAsset.unwrap().incomingEdges().length === 0) {
-                        const box = oldAsset.unwrap()
-                        if (box.name === "AudioFileBox") box.delete()
-                    }
-                })
-                return { success: true, message: `Loaded sample '${asset.name}' into Nano on '${trackName}'` }
-            },
-            none: () => Promise.resolve({ success: false, reason: "Track not found" })
+        const instrument = adapter.inputAdapter.match({
+            some: input => input.type === "instrument" ? input : undefined,
+            none: () => undefined
         })
+
+        if (!instrument || !(instrument instanceof NanoDeviceBoxAdapter)) {
+            return { success: false, reason: `No Nano instrument found on track '${trackName}'` }
+        }
+
+        const nano = instrument as NanoDeviceBoxAdapter
+        const { editing, boxGraph } = this.studio.project
+        const allSamples = await (this.studio.sampleService as any).collectAllFiles()
+        const fullAsset = allSamples.find((a: any) => a.uuid === asset.uuid)
+
+        editing.modify(() => {
+            const fileUUID = UUID.parse(asset.uuid)
+            const fileBox = boxGraph.findBox<AudioFileBox>(fileUUID)
+                .unwrapOrElse(() => AudioFileBox.create(boxGraph, fileUUID, box => {
+                    box.fileName.setValue(asset.name)
+                    if (fullAsset) box.endInSeconds.setValue(fullAsset.duration)
+                }))
+
+            const oldAsset = nano.box.file.targetVertex.map(v => v.box)
+            nano.box.file.refer(fileBox)
+
+            if (oldAsset.nonEmpty() && oldAsset.unwrap().incomingEdges().length === 0) {
+                const box = oldAsset.unwrap()
+                if (box.name === "AudioFileBox") box.delete()
+            }
+        })
+        return { success: true, message: `Loaded sample '${asset.name}' into Nano on '${trackName}'` }
     }
 
     async setPlayfieldPad(trackName: string, padIndex: number, query: string): Promise<ToolResult> {
