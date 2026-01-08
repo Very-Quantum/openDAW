@@ -18,6 +18,7 @@ Odie includes built-in diagnostic tools to help you identify why it might be mis
 
 Odie allows errors to "Fail Gracefully".
 *   **System Errors (Red)**: Connectivity or API key issues. Odie stops working.
+*   **Setup Required (Orange)**: Missing API Key or Profile. Shows the **Error Card** with a direct "Open Settings" button.
 *   **Logic Errors (Yellow)**: The AI tried to do something impossible (e.g., delete a track that doesn't exist). Odie will reply with a helpful hint.
 
 ---
@@ -29,6 +30,7 @@ Odie allows errors to "Fail Gracefully".
 | Symptom | Probable Cause | Fix |
 | :--- | :--- | :--- |
 | **"Odie is not responding"** | API Key Invalid | Check Settings > Provider. Generate a new Google Gemini Key. |
+| **"Setup Required" Card** | Missing Config | Click "Open Settings" and ensure both Name and API Key are set. |
 | **Spinning Wheel (Forever)** | Quota Limit Reached | You may have hit the Free Tier limit. Wait 60s and retry. |
 | **"Network Error"** | Offline | Check your Wi-Fi. Odie requires the internet. |
 

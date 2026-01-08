@@ -96,7 +96,6 @@ The system is composed of 5 singleton services.
 | **Hands** | `OdieAppControl.ts` | The only service allowed to mutate Studio State. |
 | **Eyes** | `KnowledgeService.ts` | Read-only observer that serializes the Studio into text for the LLM. |
 | **Canvas** | `OdieRenderEngine.tsx` | Generative UI renderer (React Component factory). |
-| **School** | `OdieSchoolData.ts` | Content provider for the built-in LMS. |
 
 ---
 

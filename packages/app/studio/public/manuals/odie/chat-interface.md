@@ -30,7 +30,6 @@ When you chat with Odie, you aren't just sending text. Odie "sees" a snapshot of
 
 ### A. The Header
 Top of the sidebar.
-*   **School Cap 🎓**: Opens the Odie Academy LMS.
 *   **Gear ⚙️**: Settings (API Keys, History Clear).
 
 ### B. The Stream

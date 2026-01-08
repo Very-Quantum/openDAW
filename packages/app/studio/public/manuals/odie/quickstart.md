@@ -24,15 +24,14 @@ This ensures it never blocks your timeline or mixer view. You can toggle it via 
 ### Step 1: Wake It Up
 1.  Click the **Robot Icon** in the top-left header.
 2.  The sidebar will slide out.
-3.  **Status Check**: You should see the message: *"I am listening."*
 
-### Step 2: Connect the Brain (API Key)
-Odie requires a neural backend to function.
-1.  Click the **Gear Icon** (Settings) in the sidebar header.
-2.  Locate the **Provider** section.
-3.  Choose **Google Gemini** (Recommended) or **Custom**.
-4.  Paste your API Key.
-    *   *Security Note*: Keys are **securely stored** in `localStorage`. They are never sent to OpenDAW servers.
+### Step 2: Connect the Brain (First Run)
+Odie requires a neural backend to function. On your first run, you will see the **Setup Required** card.
+
+1.  Click the **Open Settings** button on the error card.
+2.  **Profile**: Enter your name (Required).
+3.  **Provider**: Choose **Google Gemini** (Recommended) or **Custom**.
+4.  **API Key**: Paste your key (stored securely in `localStorage`).
 
 ![System Configuration](../assets/odie_system_config.png)
 *Fig: The System Config modal where you manage your neural backend.*

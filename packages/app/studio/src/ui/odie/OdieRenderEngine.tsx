@@ -3,6 +3,7 @@ import { AutomatableParameterFieldAdapter } from "@opendaw/studio-adapters"
 import { VisualKnob } from "./components/VisualKnob"
 import { Svg } from "@opendaw/lib-dom"
 import { PI_HALF, TAU } from "@opendaw/lib-std"
+import "./OdieRenderEngine.sass"
 
 interface WidgetProps<T> {
     data: T
@@ -14,17 +15,17 @@ interface WidgetProps<T> {
 
 const ComparisonTable = ({ data }: WidgetProps<{ headers: string[], rows: string[][] }>) => {
     return (
-        <div className="odie-widget-table" style={{ background: "rgba(0,0,0,0.2)", padding: "8px", borderRadius: "4px", margin: "8px 0" }}>
-            <table style={{ width: "100%", fontSize: "0.85em", borderCollapse: "collapse" }}>
+        <div className="odie-widget-table">
+            <table>
                 <thead>
-                    <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.1)" }}>
-                        {data.headers.map((h, i) => <th key={i} style={{ textAlign: "left", padding: "4px", color: "#aaa" }}>{h}</th>)}
+                    <tr>
+                        {data.headers.map((h, i) => <th key={i}>{h}</th>)}
                     </tr>
                 </thead>
                 <tbody>
                     {data.rows.map((row, r) => (
-                        <tr key={r} style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                            {row.map((cell, c) => <td key={c} style={{ padding: "4px" }}>{cell}</td>)}
+                        <tr key={r}>
+                            {row.map((cell, c) => <td key={c}>{cell}</td>)}
                         </tr>
                     ))}
                 </tbody>
@@ -163,52 +164,15 @@ const SmartKnob = ({ data, onAction, adapter }: WidgetProps<{
     return (
         <div
             className="odie-widget-knob"
-            style={{
-                display: "flex",
-                flexDirection: "column",
-                alignItems: "center",      // Cross-axis center
-                justifyContent: "center",  // Main-axis center
-                gap: "8px",
-                padding: "16px 8px",       // Vertical padding for labels
-                background: "rgba(255,255,255,0.02)",
-                borderRadius: "12px",
-                marginBottom: "4px",
-                width: "90px",             // Compact block width
-                minHeight: "140px",
-                pointerEvents: "auto",
-                position: "relative"
-            }}
             onmousedown={handleMouseDown}
         >
             {/* Top: Label */}
-            <span style={{
-                fontSize: "0.75rem",
-                color: "#aaacb0",
-                textTransform: "uppercase",
-                letterSpacing: "0.5px",
-                textAlign: "center",
-                lineHeight: "1.1",
-                height: "2.2em",
-                overflow: "hidden",
-                userSelect: "none",
-                zIndex: "2" // Above knob
-            }}>
+            <span className="knob-label">
                 {data.label}
             </span>
 
             {/* Middle: Knob (Scaled Up via CSS) */}
-            <div style={{
-                width: "56px",
-                height: "56px",
-                cursor: "ns-resize",
-                flexShrink: "0",
-                // FORCE 2X SIZE VISUAL
-                transform: "scale(1.5)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                margin: "12px 0" // Space for the scale
-            }}>
+            <div className="knob-container">
                 <VisualKnob
                     value={getUnitValue(localValue)}
                     color={knobColor}
@@ -218,14 +182,7 @@ const SmartKnob = ({ data, onAction, adapter }: WidgetProps<{
             </div>
 
             {/* Bottom: Value */}
-            <span className="knob-value" style={{
-                fontSize: "1rem",
-                fontWeight: "600",
-                color: "#fff",
-                fontFamily: "monospace",
-                userSelect: "none",
-                zIndex: "2" // Above knob
-            }}>
+            <span className="knob-value">
                 {localValue.toFixed(2)}
             </span>
         </div>
@@ -235,28 +192,12 @@ const SmartKnob = ({ data, onAction, adapter }: WidgetProps<{
 
 const StepList = ({ data, onAction }: WidgetProps<{ title?: string, steps: string[] }> & { onAction?: (action: any) => void }) => {
     return (
-        <div className="odie-widget-steps" style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "4px",
-            pointerEvents: "auto" // Fix clickability
-        }}>
-            {data.title && <div style={{ fontSize: "0.8em", color: "#888", marginBottom: "4px" }}>{data.title}</div>}
+        <div className="odie-widget-steps">
+            {data.title && <div className="step-title">{data.title}</div>}
             {data.steps.map((step, i) => (
                 <div
                     key={i}
-                    style={{
-                        display: "flex",
-                        gap: "8px",
-                        padding: "8px",
-                        background: "rgba(255,255,255,0.05)",
-                        borderRadius: "4px",
-                        cursor: "pointer", // Visual cue
-                        pointerEvents: "auto",
-                        transition: "background 0.2s",
-                        zIndex: "10", // Ensure it sits on top
-                        position: "relative"
-                    }}
+                    className="step-item"
                     // Native event handler for non-React environment - trying BOTH cases to be safe
                     // Use onmousedown to match SmartKnob behavior (proven to work)
                     onmousedown={(e: any) => {
@@ -275,11 +216,9 @@ const StepList = ({ data, onAction }: WidgetProps<{ title?: string, steps: strin
                             console.error("StepList: No onAction provided!")
                         }
                     }}
-                    onmouseenter={(e: any) => e.target.style.background = "rgba(255,255,255,0.1)"}
-                    onmouseleave={(e: any) => e.target.style.background = "rgba(255,255,255,0.05)"}
                 >
-                    <div style={{ color: "var(--accent)", fontWeight: "bold" }}>{i + 1}.</div>
-                    <div style={{ fontSize: "0.9em" }}>{step}</div>
+                    <div className="step-index">{i + 1}.</div>
+                    <div className="step-text">{step}</div>
                 </div>
             ))}
         </div>
@@ -288,20 +227,15 @@ const StepList = ({ data, onAction }: WidgetProps<{ title?: string, steps: strin
 
 const MidiGrid = ({ data }: WidgetProps<{ notes: { pitch: number, time: number, duration: number }[] }>) => {
     return (
-        <div className="odie-widget-midi" style={{ height: "100px", background: "#111", position: "relative", borderRadius: "4px", overflow: "hidden", margin: "8px 0", border: "1px solid rgba(255,255,255,0.1)" }}>
+        <div className="odie-widget-midi">
             {data.notes.map((n, i) => (
-                <div key={i} style={{
-                    position: "absolute",
+                <div key={i} className="midi-note" style={{
                     left: `${n.time * 25}%`,
                     width: `${n.duration * 25}%`,
                     bottom: `${(n.pitch % 12) * 8 + 4}px`, // +4 for padding
-                    height: "6px",
-                    background: "var(--accent, #4ade80)", // default fallback color
-                    borderRadius: "2px",
-                    boxShadow: "0 0 4px var(--accent, #4ade80)"
                 }} />
             ))}
-            <div style={{ position: "absolute", bottom: "2px", right: "4px", fontSize: "0.6em", color: "#555" }}>MIDI PREVIEW</div>
+            <div className="midi-label">MIDI PREVIEW</div>
         </div>
     )
 }
@@ -311,24 +245,11 @@ const ControlGrid = ({ data, onAction, resolver }: WidgetProps<{ title?: string,
     const gridId = `control-grid-${crypto.randomUUID()}`
 
     return (
-        <div id={gridId} className="odie-widget-grid" style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: "4px",
-            margin: "8px 0",
-            background: "rgba(0,0,0,0.2)",
-            padding: "8px",
-            borderRadius: "8px"
-        }}>
-            {data.title && <div style={{ width: "100%", fontSize: "0.8em", color: "#aaa", marginBottom: "4px", textAlign: "center" }}>{data.title}</div>}
+        <div id={gridId} className="odie-widget-grid">
+            {data.title && <div className="grid-title">{data.title}</div>}
 
             {/* Controls Container */}
-            <div style={{
-                display: "flex",
-                flexWrap: "wrap",
-                gap: "8px",
-                justifyContent: "center",
-            }}>
+            <div className="grid-controls">
                 {data.controls.map((ctrl, i) => {
                     let adapter: AutomatableParameterFieldAdapter<number> | undefined
                     if (resolver && ctrl.param) {
@@ -358,15 +279,7 @@ const ControlGrid = ({ data, onAction, resolver }: WidgetProps<{ title?: string,
             </div>
 
             {/* Ghost Status Toast Area */}
-            <div className="grid-status-toast" style={{
-                height: "20px",
-                textAlign: "center",
-                fontSize: "0.75em",
-                color: "#4fd1c5",
-                opacity: "0",
-                transition: "opacity 0.3s ease",
-                pointerEvents: "none"
-            }}>
+            <div className="grid-status-toast">
                 {/* Content injected via DOM */}
             </div>
         </div>
@@ -375,45 +288,19 @@ const ControlGrid = ({ data, onAction, resolver }: WidgetProps<{ title?: string,
 
 const ErrorCard = ({ data, onAction }: WidgetProps<{ title: string, message: string, actions: { label: string, id: string }[] }> & { onAction?: (action: any) => void }) => {
     return (
-        <div className="odie-widget-error" style={{
-            background: "rgba(220, 38, 38, 0.15)", // Red tint
-            border: "1px solid rgba(220, 38, 38, 0.4)",
-            borderRadius: "8px",
-            padding: "16px",
-            margin: "12px 0"
-        }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "8px" }}>
-                <div style={{ fontSize: "1.2em" }}>⚠️</div>
-                <div style={{ color: "#fca5a5", fontWeight: "bold", fontSize: "0.95em" }}>{data.title}</div>
+        <div className="odie-widget-error">
+            <div className="error-header">
+                <div className="error-icon">⚠️</div>
+                <div className="error-title">{data.title}</div>
             </div>
 
-            <div style={{
-                fontSize: "0.9em",
-                color: "#e5e7eb",
-                marginBottom: "16px",
-                lineHeight: "1.4"
-            }}>
+            <div className="error-message">
                 {data.message}
             </div>
 
-            <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <div className="error-actions">
                 {data.actions.map((action, i) => (
                     <button key={i}
-                        style={{
-                            background: "rgba(0,0,0,0.3)",
-                            border: "1px solid rgba(255,255,255,0.1)",
-                            borderRadius: "4px",
-                            padding: "6px 12px",
-                            color: "white",
-                            cursor: "pointer",
-                            fontSize: "0.85em",
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "6px",
-                            transition: "all 0.2s"
-                        }}
-                        onmouseenter={(e: any) => e.target.style.background = "rgba(255,255,255,0.1)"}
-                        onmouseleave={(e: any) => e.target.style.background = "rgba(0,0,0,0.3)"}
                         onInit={(el: HTMLElement) => {
                             el.onclick = (e) => {
                                 e.stopPropagation()
@@ -432,9 +319,9 @@ const ErrorCard = ({ data, onAction }: WidgetProps<{ title: string, message: str
 
 const ImageGallery = ({ data }: WidgetProps<{ url: string, prompt: string }>) => {
     return (
-        <div className="odie-widget-image" style={{ margin: "8px 0", borderRadius: "8px", overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
-            <img src={data.url} alt={data.prompt} style={{ width: "100%", height: "auto", display: "block" }} />
-            <div style={{ padding: "8px", background: "#111", fontSize: "0.8em", color: "#888" }}>
+        <div className="odie-widget-image">
+            <img src={data.url} alt={data.prompt} />
+            <div className="image-caption">
                 Generated: "{data.prompt}"
             </div>
         </div>
