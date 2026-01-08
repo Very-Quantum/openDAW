@@ -63,6 +63,18 @@ interface NamedInstrumentFactory extends InstrumentFactory {
     defaultName: string
 }
 
+// Local helper type for Boxes that have a position (Common Interface)
+type RegionBoxWithPosition =
+    | NoteRegionBox
+    | AudioRegionBox
+    | ValueRegionBox
+
+// Local definition for Track Collection traversal
+interface TrackCollectionAdapter {
+    adapters(): any[] // Using any[] here as generic fallback for the array elements if specific TrackAdapter isn't exported
+    values(): IterableIterator<any>
+}
+
 /** Structured tool result for better error reporting */
 export interface ToolResult {
     success: boolean
@@ -475,8 +487,8 @@ export class OdieAppControl {
             some: async (region) => {
                 try {
                     this.studio.project.editing.modify(() => {
-                        // RegionBox base class is not exported, casting to any for position access
-                        (region.box as any).position.setValue(ppqnNewTime)
+                        // Safe cast to known RegionBox types that have 'position'
+                        (region.box as RegionBoxWithPosition).position.setValue(ppqnNewTime)
                     })
                     return { success: true }
                 } catch (e: any) {
@@ -562,24 +574,24 @@ export class OdieAppControl {
         return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
             some: async (adapter) => {
                 // START ROBUST TRACK FINDING
-                // Use generic access or cast to known structure
-                const tracksCollection: any = adapter.tracks
+                // Use defined interface for safer access
+                const tracksCollection = adapter.tracks as unknown as TrackCollectionAdapter
                 let track: any = undefined
 
-                if (Array.isArray(tracksCollection)) {
-                    track = tracksCollection[0]
-                } else if (typeof tracksCollection.adapters === 'function') {
-                    const adapters = tracksCollection.adapters()
+                if ((tracksCollection as any).adapters && typeof (tracksCollection as any).adapters === 'function') {
+                    const adapters = (tracksCollection as any).adapters()
                     track = Array.isArray(adapters) ? adapters[0] : undefined
-                } else if (typeof tracksCollection.values === 'function') {
-                    const vals = tracksCollection.values()
+                } else if ((tracksCollection as any).values && typeof (tracksCollection as any).values === 'function') {
+                    const vals = (tracksCollection as any).values()
                     if (Array.isArray(vals)) {
                         track = vals[0]
                     } else if (vals && typeof vals.next === 'function') {
                         track = vals.next().value
                     } else {
-                        try { track = Array.from(vals)[0] } catch (e) { }
+                        try { track = Array.from(vals as any)[0] } catch (e) { }
                     }
+                } else if (Array.isArray(tracksCollection)) {
+                    track = tracksCollection[0]
                 }
 
                 if (!track) return { success: false, reason: `Track "${trackName}" has no note lanes (Robust Search Failed).` }

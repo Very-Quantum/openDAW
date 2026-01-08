@@ -414,10 +414,12 @@ const ErrorCard = ({ data, onAction }: WidgetProps<{ title: string, message: str
                         }}
                         onmouseenter={(e: any) => e.target.style.background = "rgba(255,255,255,0.1)"}
                         onmouseleave={(e: any) => e.target.style.background = "rgba(0,0,0,0.3)"}
-                        onmousedown={(e: any) => {
-                            e.stopPropagation()
-                            e.preventDefault()
-                            if (onAction) onAction({ name: "error_action", context: { actionId: action.id } })
+                        onInit={(el: HTMLElement) => {
+                            el.onclick = (e) => {
+                                e.stopPropagation()
+                                console.log("⚡ [ErrorCard] Button Clicked (via onInit):", action.id)
+                                if (onAction) onAction({ name: "error_action", context: { actionId: action.id } })
+                            }
                         }}
                     >
                         {action.label}

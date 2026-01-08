@@ -63,19 +63,15 @@ export class OdieService {
     public studio?: StudioService
 
     constructor() {
-        // [ANTIGRAVITY] Expose for Debugging/Extraction
+        // [    ANTIGRAVITY] Expose for Debugging/Extraction
         ; (window as any).odie = this;
 
         try {
-            // Initialize View State
-            if (this.ai.wizardCompleted.getValue()) {
-                this.viewState.setValue("chat")
-            }
+            // [ANTIGRAVITY] Pivot: Always boot to Chat. No blocked Wizard.
+            // If setup is missing, we handle it responsively in sendMessage.
+            this.viewState.setValue("chat")
 
-            // Auto-Open if wizard not done
-            if (!this.ai.wizardCompleted.getValue()) {
-                setTimeout(() => this.visible.setValue(true), 1000) // Small delay to ensure UI ready
-            }
+            // Auto-Save History
 
             // Auto-Save History
             this.messages.subscribe(() => {
@@ -115,7 +111,20 @@ export class OdieService {
             // [ANTIGRAVITY] Initial connection validation on boot
             this.validateConnection()
 
-
+            // [ANTIGRAVITY] History Sync
+            // If the active session is deleted from history (e.g. via sidebar), we must clear the UI
+            // otherwise we are left in a "Ghost Chat" state.
+            this.activeSessionId = null // Ensure init
+            chatHistory.sessions.subscribe(observer => {
+                if (this.activeSessionId) {
+                    const sessions = observer.getValue()
+                    const exists = sessions.find((s: any) => s.id === this.activeSessionId)
+                    if (!exists) {
+                        console.log("🧹 [OdieService] Active session was deleted externally. Resetting view.")
+                        this.startNewChat()
+                    }
+                }
+            })
 
         } catch (e) {
             console.error("🔥 OdieService Constructor CRASH:", e)
@@ -260,10 +269,44 @@ export class OdieService {
 
 
         try {
-            // Fix: Pass full history, not just text
-            // --- Cortex Injection: Dynamic Personal & Memory ---
+            // [ANTIGRAVITY] Responsive Error Handling: Check Configuration First
             const provider = this.ai.getActiveProvider()
             const config = provider ? this.ai.getConfig(provider.id) : {}
+
+            // Check if we need setup: No provider OR (provider needs key AND key is missing)
+            // Note: "ollama" (local) often doesn't need a key, or has one but valid check handles it.
+            // Simple check: If provider ID is missing or (not local AND no key)
+            const needsSetup = !provider || (provider.id !== "ollama" && (!config.apiKey || config.apiKey.length < 5))
+
+            if (needsSetup) {
+                console.warn("⚠️ Odie: Missing Configuration. Triggering Error Card.")
+                const errorCard = {
+                    ui_component: "error_card",
+                    data: {
+                        title: "Setup Required",
+                        message: "I need a brain to think! Please connect an AI provider in settings.",
+                        actions: [
+                            { label: "⚙️ Open Settings", id: "open_settings" }
+                        ]
+                    }
+                }
+
+                // Return immediate "Model" response with card
+                const sysMsg: Message = {
+                    id: (Date.now() + 1).toString(),
+                    role: "model",
+                    content: "```json\n" + JSON.stringify(errorCard, null, 2) + "\n```",
+                    timestamp: Date.now()
+                }
+                const currentPostExec = this.messages.getValue()
+                this.messages.setValue([...currentPostExec, sysMsg])
+                return
+            }
+
+
+            // --- Cortex Injection: Dynamic Personal & Memory ---
+            // const provider = this.ai.getActiveProvider() // Already got above
+            // const config = provider ? this.ai.getConfig(provider.id) : {} // Already got above
 
             // [ANTIGRAVITY] Smart Track Focus - Help AI understand context
             const focusState = this.ai.contextService.state.getValue().focus
@@ -587,6 +630,8 @@ ${JSON.stringify({
 
             }, handleStatus)
 
+
+
             // Subscribe to the stream (ObservableValue emits itself on change)
             // CRITICAL: Update by message ID, not position, to prevent overwriting other messages (e.g., /verify report)
             const targetMsgId = assistantMsg.id
@@ -640,6 +685,7 @@ ${JSON.stringify({
             this.isGenerating.setValue(false)
         }
     }
+
 
     // --- HISTORY MANAGEMENT ---
 
@@ -700,26 +746,38 @@ ${JSON.stringify({
     /**
      * [A2UI] Handle Widget Action
      * Bridges Gen UI widget interactions (like knob adjustments) to OdieAppControl.
-     * Adds a confirmation message to the chat.
+     * Also handles simple Error Card actions.
      */
-    async handleWidgetAction(action: {
-        type: string
-        name: string
-        componentId: string
-        context: {
-            param?: string
-            // [Universal Control]
-            deviceType?: "mixer" | "effect" | "instrument"
-            deviceIndex?: number
-            paramPath?: string
-            // ---
-            trackName?: string
-            value?: number | string
-            previousValue?: number
-            _targetGridId?: string // Check for our new hidden ID
-            actionId?: string
+    async handleWidgetAction(action: any) {
+        // [ANTIGRAVITY] Debug Handling
+        console.log("⚡ [OdieService] handleWidgetAction received:", JSON.stringify(action))
+
+        // [ANTIGRAVITY] Priority: Error Actions (No Dependencies)
+        if (action.name === "error_action" && action.context?.actionId) {
+            this.handleErrorAction(action.context.actionId)
+            return
         }
-    }) {
+
+        /*
+        action: {
+            type: string
+            name: string
+            componentId: string
+            context: {
+                param?: string
+                // [Universal Control]
+                deviceType?: "mixer" | "effect" | "instrument"
+                deviceIndex?: number
+                paramPath?: string
+                // ---
+                trackName?: string
+                value?: number | string
+                previousValue?: number
+                _targetGridId?: string // Check for our new hidden ID
+                actionId?: string
+            }
+        }
+        */
         if (!this.appControl) {
             console.warn("🧠 [Gen UI] Widget action received but no appControl available")
             return

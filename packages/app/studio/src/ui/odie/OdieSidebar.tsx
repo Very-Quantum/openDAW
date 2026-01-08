@@ -104,26 +104,8 @@ export const OdieSidebar = (props: { service: StudioService, lifecycle: Terminat
         }} />
 
         <RailBtn icon={<IconSettings />} label="Settings" variant="settings" onclick={() => {
-            if (!odieService) return
-            import("./components/OdieModalFrame").then(({ OdieModalFrame }) => {
-                import("./OdieSettings").then(({ OdieSettings }) => {
-                    let overlay: HTMLElement
-                    const modalLifecycle = new Terminator()
-                    const close = () => {
-                        overlay.remove()
-                        modalLifecycle.terminate()
-                    }
-                    const settingsContent = OdieSettings({ service: odieService!, lifecycle: modalLifecycle, onBack: close, isEmbedded: false })
-                    overlay = OdieModalFrame({
-                        title: "System Config",
-                        icon: "⚙️",
-                        width: "1100px",
-                        onClose: close,
-                        children: settingsContent
-                    })
-                    document.body.appendChild(overlay)
-                })
-            })
+            // Helper handles the logic, or we can drive via state
+            if (odieService) odieService.viewState.setValue("settings")
         }} />
     </div>);
 
@@ -229,6 +211,50 @@ export const OdieSidebar = (props: { service: StudioService, lifecycle: Terminat
                 historyView.style.display = "none"
             }
         }))
+
+        // [ANTIGRAVITY] Subscribe to View State (Settings / Chat)
+        lifecycle.own(odieService.viewState.subscribe((observer: any) => {
+            const state = observer.getValue()
+            if (state === "settings") {
+                openSettingsModal()
+            }
+        }))
+    }
+
+    // Helper: Open Settings Modal
+    const openSettingsModal = () => {
+        if (!odieService) return
+
+        // Prevent double-opening if already active? 
+        // Simple check: exists in DOM? 
+        if (document.getElementById("odie-settings-overlay")) return
+
+        import("./components/OdieModalFrame").then(({ OdieModalFrame }) => {
+            import("./OdieSettings").then(({ OdieSettings }) => {
+                let overlay: HTMLElement
+                const modalLifecycle = new Terminator()
+
+                const close = () => {
+                    overlay.remove()
+                    modalLifecycle.terminate()
+                    // Sync state back to chat if we closed it manually
+                    if (odieService?.viewState.getValue() === "settings") {
+                        odieService?.viewState.setValue("chat")
+                    }
+                }
+
+                const settingsContent = OdieSettings({ service: odieService!, lifecycle: modalLifecycle, onBack: close, isEmbedded: false })
+                overlay = OdieModalFrame({
+                    title: "System Config",
+                    icon: "⚙️",
+                    width: "1100px",
+                    onClose: close,
+                    children: settingsContent
+                })
+                overlay.id = "odie-settings-overlay" // Marker for singleton check
+                document.body.appendChild(overlay)
+            })
+        })
     }
 
     // Toggle Logic

@@ -27,6 +27,9 @@ export const OdieHistoryPanel = ({ service, onClose }: PanelProps) => {
     }}>
         <style>{`
             .history-item:hover { background: var(--bg-surface-2); }
+            .delete-action-btn:hover { opacity: 0.8; }
+            .delete-action-btn:active { transform: translateY(1px); }
+            .cancel-action-btn:hover { background: var(--bg-surface-3) !important; }
         `}</style>
     </div> as HTMLElement
 
@@ -71,50 +74,78 @@ export const OdieHistoryPanel = ({ service, onClose }: PanelProps) => {
                         cursor: "pointer", display: "flex", flexDirection: "column", gap: "2px",
                         transition: "background 0.1s",
                         margin: "0 0 2px 0",
-                        color: "var(--text-primary)"
+                        color: "var(--text-primary)",
+                        position: "relative",
+                        overflow: "hidden" // Ensure slide effects stay contained
                     }}
                         onclick={() => {
                             service.loadSession(session.id)
-                            onClose() // Switches back to chat
+                            onClose()
                         }}>
                         <div style={{ fontSize: "13px", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                             {session.title || "Untitled Chat"}
                         </div>
-                        <div style={{ fontSize: "11px", color: "var(--text-tertiary)", display: "flex", justifyContent: "space-between" }}>
+                        <div className="meta-row" style={{ fontSize: "11px", color: "var(--text-tertiary)", display: "flex", justifyContent: "space-between", alignItems: "center", height: "20px" }}>
                             <span>{new Date(session.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                            <span
-                                style={{ color: "var(--color-red)", opacity: "0", transition: "opacity 0.2s", fontSize: "12px", cursor: "pointer" }}
+
+                            {/* Standard Delete Trigger */}
+                            <span className="delete-trigger"
+                                style={{
+                                    opacity: "0", transition: "opacity 0.2s", fontSize: "14px", cursor: "pointer",
+                                    padding: "2px 6px", borderRadius: "4px"
+                                }}
                                 onclick={(e: any) => {
                                     e.stopPropagation()
-                                    const target = e.target as HTMLElement
-                                    // Switch to confirm mode
-                                    if (target.innerText === "🗑") {
-                                        target.innerText = "Confirm?"
-                                        target.style.opacity = "1"
-                                        target.style.color = "var(--color-red)"
-
-                                        // Auto-cancel after 3s
-                                        setTimeout(() => {
-                                            if (target.innerText !== "🗑") {
-                                                target.innerText = "🗑"
-                                                target.style.opacity = "0"
-                                            }
-                                        }, 3000)
-                                    } else {
-                                        // Confirmed
-                                        chatHistory.deleteSession(session.id)
-                                    }
-                                }}
-                                onmouseenter={(e: any) => {
-                                    if (e.target.innerText === "🗑") e.target.style.opacity = "1"
+                                    // Show Confirm overlay
+                                    const overlay = item.querySelector(".confirm-overlay") as HTMLElement
+                                    if (overlay) overlay.style.display = "flex"
                                 }}
                             >🗑</span>
                         </div>
+
+                        {/* Confirmation Overlay (Initially Hidden) */}
+                        <div className="confirm-overlay" style={{
+                            display: "none",
+                            position: "absolute", top: "0", left: "0", right: "0", bottom: "0",
+                            background: "var(--bg-surface-2)", // Match hover state
+                            alignItems: "center", justifyContent: "flex-end",
+                            padding: "0 12px", gap: "8px",
+                            zIndex: "10"
+                        }} onclick={(e) => e.stopPropagation()}>
+
+                            <button className="cancel-action-btn" style={{
+                                background: "none", border: "1px solid var(--border-dim)", color: "var(--text-primary)",
+                                padding: "4px 10px", borderRadius: "4px", fontSize: "11px", cursor: "pointer",
+                                transition: "all 0.1s"
+                            }} onclick={(e) => {
+                                e.stopPropagation()
+                                const overlay = item.querySelector(".confirm-overlay") as HTMLElement
+                                if (overlay) overlay.style.display = "none"
+                            }}>Cancel</button>
+
+                            <button className="delete-action-btn" style={{
+                                background: "var(--color-red)", border: "none", color: "white",
+                                padding: "4px 12px", borderRadius: "4px", fontSize: "11px", cursor: "pointer", fontWeight: "600",
+                                transition: "all 0.1s"
+                            }} onclick={(e) => {
+                                // [ANTIGRAVITY] Removed preventDefault to ensure native click behavior
+                                e.stopPropagation()
+                                console.log("🗑 DELETING SESSION:", session.id)
+                                chatHistory.deleteSession(session.id)
+                            }}>Delete</button>
+                        </div>
+
                     </div> as HTMLElement
 
-                    // Show delete on hover
-                    item.onmouseenter = () => { (item.lastChild!.lastChild as HTMLElement).style.opacity = "0.5" }
-                    item.onmouseleave = () => { (item.lastChild!.lastChild as HTMLElement).style.opacity = "0" }
+                    // Show delete trigger on hover
+                    item.onmouseenter = () => {
+                        const trigger = item.querySelector(".delete-trigger") as HTMLElement
+                        if (trigger) trigger.style.opacity = "0.7"
+                    }
+                    item.onmouseleave = () => {
+                        const trigger = item.querySelector(".delete-trigger") as HTMLElement
+                        if (trigger) trigger.style.opacity = "0"
+                    }
 
                     root.appendChild(item)
                 })

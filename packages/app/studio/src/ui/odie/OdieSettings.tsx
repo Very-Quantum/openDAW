@@ -315,7 +315,16 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
 
             content.appendChild(row)
         } else if (id.includes("ollama")) {
-            const provider = service.ai.getProvider(id)!
+            // [ANTIGRAVITY] Safe Access: specific block for Local to add Hardware Fit
+            // Fallback to a ghost provider if the registry is out of sync to prevent UI crashes
+            const realProvider = service.ai.getProvider(id)
+            const provider = realProvider || {
+                id: id,
+                manifest: { name: "Ollama (Local)", description: "Private execution." },
+                checkHardwareFit: async () => ({ ok: false, message: "Provider not fully loaded." }),
+                validate: async () => ({ ok: false, message: "Provider missing." })
+            } as any
+
             const info = <div className="guide-col">
                 <div className="info-guide" style={{ padding: "16px", background: "rgba(255,255,255,0.03)", borderRadius: "8px", border: "1px solid rgba(255,255,255,0.05)" }}>
                     <h4 style={{ margin: "0 0 12px 0", fontSize: "14px", color: "#aaa", textTransform: "uppercase", letterSpacing: "0.5px" }}>Privacy & Audio Safety</h4>
@@ -327,16 +336,12 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
                         <div style={{ marginBottom: "16px" }}>
                             <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>Finding Your Fit</strong></p>
                             <p style={{ margin: "0 0 8px 0" }}>Ollama automatically detects your hardware. If a model is too big for your Graphics Card (GPU), it moves to your slower System Memory (CPU). Run <code>ollama ps</code> in your terminal while Odie is active; if it shows "100% CPU", the model is too heavy for your machine's muscles and will be sluggish.</p>
-                            <p style={{ margin: "0", fontSize: "11px", fontStyle: "italic", color: "var(--color-gray)" }}>Goal: Find the largest version that shows "100% GPU" for the smoothest experience.</p>
-                        </div>
-                        <div style={{ marginBottom: "16px" }}>
-                            <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>The Trade-Off</strong></p>
-                            <p style={{ margin: "0 0 8px 0" }}>Local processing is private and secure, but generally slower than the Cloud. Smaller computers may find local models and GenUI unusable.</p>
+                            <p style={{ margin: "0", fontSize: "11px", fontStyle: "italic", color: "var(--color-gray)" }}>Goal: Find the largest version that fits entirely on your Graphics Card.</p>
                         </div>
                         <div style={{ marginBottom: "0" }}>
                             <p style={{ margin: "0 0 4px 0", color: "var(--color-bright)" }}><strong>Audio Priority</strong></p>
                             <p style={{ margin: "0 0 8px 0" }}>Odie is a side-car subsystem. While it runs in an isolated process, keeping your model in the <strong>GPU (VRAM)</strong> is the "Elite Standard."</p>
-                            <p style={{ margin: "0 0 8px 0" }}>Running AI on your CPU consumes the same "muscles" used for audio math and plugins. If the AI is too heavy, your audio may pop or glitch. Aim for a model size that fits entirely on your Graphics Card to keep your session smooth.</p>
+                            <p style={{ margin: "0 0 8px 0" }}>Running AI on your CPU consumes the same "muscles" used for audio math and plugins. If the AI is too heavy, your audio may pop or glitch.</p>
                         </div>
                     </div>
                 </div>
@@ -350,25 +355,32 @@ export const OdieSettings = ({ service, lifecycle: _lifecycle, onBack, isEmbedde
                         <label className="label">Hardware Fit</label>
                         <div style={{ flex: "1", display: "flex", alignItems: "center", gap: "12px", background: "rgba(255,255,255,0.02)", padding: "8px 12px", borderRadius: "4px", border: "1px solid rgba(255,255,255,0.05)" }}>
                             <span id="hardware-fit-msg" style={{ flex: "1", fontSize: "11px", color: "var(--color-gray)" }}>Detecting VRAM vs CPU...</span>
-                            <button className="odie-btn" style={{ fontSize: "10px" }} onclick={async (e: any) => {
-                                const btn = e.currentTarget as HTMLButtonElement;
-                                const originalText = btn.innerText;
-                                btn.innerText = "Testing...";
-                                btn.disabled = true;
+                            <button className="odie-btn" style={{ fontSize: "10px" }}
+                                disabled={!realProvider || !realProvider.checkHardwareFit}
+                                onclick={async (e: any) => {
+                                    const btn = e.currentTarget as HTMLButtonElement;
+                                    const originalText = btn.innerText;
+                                    btn.innerText = "Testing...";
+                                    btn.disabled = true;
 
-                                try {
-                                    const status = await provider.checkHardwareFit!();
-                                    const color = status.ok ? "var(--color-green)" : (status.data?.cpu === 100 ? "var(--color-red)" : "var(--color-orange)");
-                                    const display = document.getElementById('hardware-fit-msg');
-                                    if (display) {
-                                        display.innerText = status.message;
-                                        display.style.color = color;
+                                    try {
+                                        if (provider.checkHardwareFit) {
+                                            const status = await provider.checkHardwareFit();
+                                            const color = status.ok ? "var(--color-green)" : (status.data?.cpu === 100 ? "var(--color-red)" : "var(--color-orange)");
+                                            const display = document.getElementById('hardware-fit-msg');
+                                            if (display) {
+                                                display.innerText = status.message;
+                                                display.style.color = color;
+                                            }
+                                        } else {
+                                            const display = document.getElementById('hardware-fit-msg');
+                                            if (display) display.innerText = "Feature not supported.";
+                                        }
+                                    } finally {
+                                        btn.innerText = originalText;
+                                        btn.disabled = false;
                                     }
-                                } finally {
-                                    btn.innerText = originalText;
-                                    btn.disabled = false;
-                                }
-                            }}>Test Fit</button>
+                                }}>Test Fit</button>
                         </div>
                     </div>
 
