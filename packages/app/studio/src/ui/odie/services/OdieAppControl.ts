@@ -83,15 +83,8 @@ export interface ToolResult {
 }
 
 /**
- * THE NERVOUS SYSTEM (Odie Studio Control)
- * -----------------------------------------
- * This facade serves as the Type-Safe "Hands" for Odie.
- * All actions are strictly mapped to the "ODIE_INTEGRATION_SPEC.md".
- *
- * Rules:
- * 1. Never hallucinate methods.
- * 2. Always check safety (e.g. isPlaying).
- * 3. Return explicit success/failure messages where useful.
+ * Odie Studio Control
+ * Validated Bridge for AI-to-Studio interactions.
  */
 import { OdieTransport } from "./OdieTransport"
 
@@ -101,7 +94,7 @@ export class OdieAppControl {
         this.transport = new OdieTransport(studio)
     }
 
-    // --- 👁️ THE EYES (Arrangement) ---
+    // --- Arrangement ---
 
     async createProject(): Promise<boolean> {
         try {
@@ -127,7 +120,7 @@ export class OdieAppControl {
             return { success: false, reason: "No active project loaded." }
         }
 
-        // [ANTIGRAVITY] Strict Typo Guard & Normalization & Northstar Support
+        // Type normalization
         // If type is missing/undefined, default to 'synth' (Smart Default)
         const t = (type || "synth").toLowerCase()
         let factory: InstrumentFactory | undefined
@@ -141,7 +134,7 @@ export class OdieAppControl {
         else if (t === 'midiout' || t === 'midi-output') factory = InstrumentFactories.MIDIOutput
         else if (t === "instrument") { type = "nano"; factory = InstrumentFactories.Nano; }
         else if (t !== 'audio') {
-            // [VERIFIED ARCHITECTURE] InstrumentFactories is a Namespace. 
+            // InstrumentFactories is a Namespace. 
             // We must iterate over the 'Named' object values and check 'defaultName'.
             const factories = Object.values(InstrumentFactories.Named)
             const match = factories.find(f => {
@@ -264,14 +257,14 @@ export class OdieAppControl {
 
 
 
-    // --- 🛡️ STATE BRIDGE (Robust Verification) ---
+
 
 
     private findAudioUnit(name: string): Option<AudioUnitBox> {
         return this.findAudioUnitAdapter(name).map(a => a.box)
     }
 
-    // --- 🫀 THE HEART (Transport) ---
+    // --- Transport ---
 
     async play() {
         this.transport.play()
@@ -325,7 +318,7 @@ export class OdieAppControl {
         return this.transport.setTimeSignature(numerator, denominator)
     }
 
-    // --- 👐 THE HANDS (Mixer) ---
+    // --- Mixer ---
 
     async setVolume(trackName: string, db: number): Promise<ToolResult> {
         // Range Safety
@@ -398,7 +391,7 @@ export class OdieAppControl {
         })
     }
 
-    // --- 🕸️ NERVOUS SYSTEM (View) ---
+    // --- View ---
 
     async switchScreen(screen: "arrangement" | "scene"): Promise<boolean> {
         // ... (Keep existing if working, or blindly return true as UI state is hard to verify structurally)
@@ -419,7 +412,7 @@ export class OdieAppControl {
         } catch (e) { return false }
     }
 
-    // --- 🧹 HYGIENE (Arrangement Config) ---
+    // --- Arrangement Config ---
 
     async deleteTrack(name: string): Promise<boolean> {
         console.log(`[OdieAppControl] deleteTrack requested for: '${name}'`);
@@ -454,7 +447,7 @@ export class OdieAppControl {
         return result;
     }
 
-    // --- 🖖 THE FINGERS (Editing) ---
+    // --- Editing ---
 
     async splitRegion(trackName: string, time?: number): Promise<ToolResult> {
         // Default to current playhead if no time specified
@@ -642,7 +635,7 @@ export class OdieAppControl {
                         const regionPos = region!.position
                         console.log(`[Odie] Adding ${notes.length} notes to region at ${regionPos}`)
 
-                        // [ANTIGRAVITY] SIGNAL DISPATCH
+
                         this.studio.odieEvents.notify({ type: "region-created", track: trackName, time: regionPos })
 
                         notes.forEach(note => {
@@ -736,7 +729,7 @@ export class OdieAppControl {
                         })
                     })
 
-                    // [ANTIGRAVITY] SIGNAL DISPATCH
+                    // Signal Dispatch
                     this.studio.odieEvents.notify({ type: "param-changed", track: trackName, param, value })
                     return { success: true }
 
@@ -749,7 +742,7 @@ export class OdieAppControl {
         })
     }
 
-    // --- 📤 THE OUTPUT (Export) ---
+    // --- Export ---
 
     async exportMixdown(): Promise<boolean> {
         try {
@@ -771,11 +764,10 @@ export class OdieAppControl {
         }
     }
 
-    // --- 🎨 THE IMAGINATION (Generative) ---
-    // [ANTIGRAVITY] Native Mode - No Client Tools needed.
 
 
-    // --- 💾 THE MEMORY (Project) ---
+
+    // --- Project ---
 
     async loadProject(): Promise<boolean> {
         return this.studio.browseLocalProjects().then(() => true).catch(() => false)
@@ -784,7 +776,7 @@ export class OdieAppControl {
     async loadTemplate(name: string): Promise<boolean> {
         try {
             await this.studio.loadTemplate(name)
-            // [ANTIGRAVITY] SIGNAL DISPATCH
+            // Signal Dispatch
             this.studio.odieEvents.notify({ type: "project-loaded", name: name })
             return true
         } catch (e) {
@@ -793,7 +785,7 @@ export class OdieAppControl {
         }
     }
 
-    // --- 👂 THE EARS (Analysis) ---
+    // --- Analysis ---
 
     inspectSelection(): string {
         if (!this.studio.hasProfile) return "No project loaded."
@@ -1040,7 +1032,7 @@ export class OdieAppControl {
                         regions: regions
                     })
 
-                    // [ANTIGRAVITY] SIGNAL DISPATCH
+                    // Signal Dispatch
                     this.studio.odieEvents.notify({ type: "analysis-complete", track: trackName, result: JSON.parse(result) })
 
                     return result
@@ -1103,7 +1095,7 @@ export class OdieAppControl {
     }
 
     /**
-     * [ANTIGRAVITY] Verification Loop Tool
+     * Verification Loop Tool
      * Performs a deep audit of the current state to confirm a mutation.
      */
     async verifyAction(action: string, expected: string): Promise<string> {
@@ -1238,9 +1230,7 @@ export class OdieAppControl {
         })
     }
 
-    // =====================================================================
-    // [A2UI] COMPREHENSIVE READ/WRITE API FOR GEN UI
-    // =====================================================================
+
 
     /**
      * Get complete details about a track's signal chain including:
@@ -1446,7 +1436,7 @@ export class OdieAppControl {
 
                         if (setter) {
                             try {
-                                // [ANTIGRAVITY] CRITICAL: Must be in editing transaction
+                                // Critical: Must be in editing transaction
                                 this.studio.project.editing.modify(() => {
                                     setter!(val)
                                 })
@@ -1461,7 +1451,7 @@ export class OdieAppControl {
                     }
 
 
-                    // [AG] Hybrid Access Helper: Tries to find and set a param on a target object
+                    // Hybrid Access Helper: Tries to find and set a param on a target object
                     const trySetParam = (targetRoot: any, path: string, val: number): boolean => {
                         if (!targetRoot) return false
                         try {
@@ -1661,7 +1651,7 @@ export class OdieAppControl {
                                 (box as any).modularSetup.refer(modularSetup.device)
                             }
                             box.label.setValue(effectType)
-                            // [AG] Deterministic Indexing
+                            // Deterministic Indexing
                             if (box.index) {
                                 box.index.setValue(adapter.audioEffects.getMinFreeIndex())
                             }
@@ -1705,7 +1695,7 @@ export class OdieAppControl {
                         BoxClass.create(this.studio.project.boxGraph, UUID.generate(), (box: any) => {
                             if (box.host && adapter.box.midiEffects) {
                                 box.host.refer(adapter.box.midiEffects)
-                                // [AG] Deterministic Indexing
+                                // Deterministic Indexing
                                 if (box.index) {
                                     box.index.setValue(adapter.midiEffects.getMinFreeIndex())
                                 }
@@ -1886,7 +1876,7 @@ export class OdieAppControl {
         }
     }
 
-    // --- 📚 THE LIBRARY (Assets) ---
+    // --- Assets ---
 
     async listSamples(): Promise<{ uuid: string, name: string }[]> {
         // cast to any to access protected collectAllFiles
