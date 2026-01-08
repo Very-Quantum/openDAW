@@ -275,3 +275,5 @@ terms apply automatically.
 ## License
 
 [AGPL v3 (or later)](https://www.gnu.org/licenses/agpl-3.0.txt) © 2025 André Michelle
+
+<!-- Trigger Simulation -->
