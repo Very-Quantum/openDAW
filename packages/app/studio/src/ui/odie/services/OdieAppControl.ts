@@ -69,11 +69,7 @@ type RegionBoxWithPosition =
     | AudioRegionBox
     | ValueRegionBox
 
-// Local definition for Track Collection traversal
-interface TrackCollectionAdapter {
-    adapters(): any[] // Using any[] here as generic fallback for the array elements if specific TrackAdapter isn't exported
-    values(): IterableIterator<any>
-}
+
 
 /** Structured tool result for better error reporting */
 export interface ToolResult {
