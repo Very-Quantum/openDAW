@@ -567,28 +567,8 @@ export class OdieAppControl {
         return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
             some: async (adapter) => {
                 // START ROBUST TRACK FINDING
-                // Use defined interface for safer access
-                const tracksCollection = adapter.tracks as unknown as TrackCollectionAdapter
-                let track: any = undefined
-
-                if ((tracksCollection as any).adapters && typeof (tracksCollection as any).adapters === 'function') {
-                    const adapters = (tracksCollection as any).adapters()
-                    track = Array.isArray(adapters) ? adapters[0] : undefined
-                } else if ((tracksCollection as any).values && typeof (tracksCollection as any).values === 'function') {
-                    const vals = (tracksCollection as any).values()
-                    if (Array.isArray(vals)) {
-                        track = vals[0]
-                    } else if (vals && typeof vals.next === 'function') {
-                        track = vals.next().value
-                    } else {
-                        try { track = Array.from(vals as any)[0] } catch (e) { }
-                    }
-                } else if (Array.isArray(tracksCollection)) {
-                    track = tracksCollection[0]
-                }
-
+                const track = this.findFirstTrack(adapter)
                 if (!track) return { success: false, reason: `Track "${trackName}" has no note lanes (Robust Search Failed).` }
-                // END ROBUST TRACK FINDING
 
                 try {
                     // 2. Determine target clip (Simplification: Use the first one found or fail for now)
@@ -889,31 +869,11 @@ export class OdieAppControl {
             if (adapterMeta.isEmpty()) throw new Error(`Could not find adapter for created track ${trackName}`)
             const adapter = adapterMeta.unwrap()
 
-            // START ROBUST TRACK FINDING
-            const tracksCollection = adapter.tracks as any
-            let track: any = undefined
-
-            if (Array.isArray(tracksCollection)) {
-                track = tracksCollection[0]
-            } else if (typeof tracksCollection.adapters === 'function') {
-                const adapters = tracksCollection.adapters()
-                track = Array.isArray(adapters) ? adapters[0] : undefined
-            } else if (typeof tracksCollection.values === 'function') {
-                const vals = tracksCollection.values()
-                if (Array.isArray(vals)) {
-                    track = vals[0]
-                } else if (vals && typeof vals.next === 'function') {
-                    track = vals.next().value
-                } else {
-                    try { track = Array.from(vals)[0] } catch (e) { }
-                }
-            }
-
+            const track = this.findFirstTrack(adapter)
             if (!track) throw new Error("Created audio unit has no track lane (Collection empty or unknown type)")
 
             const trackBox = track.box
             if (!trackBox) throw new Error("Track Adapter has no underlying TrackBox")
-            // END ROBUST TRACK FINDING
 
             const { editing, boxGraph } = this.studio.project
 
@@ -1722,29 +1682,7 @@ export class OdieAppControl {
     async addNoteClip(trackName: string, label: string, notes: MidiNoteDef[]): Promise<ToolResult> {
         return this.findAudioUnitAdapter(trackName).match<Promise<ToolResult>>({
             some: async (adapter) => {
-                const tracksCollection = adapter.tracks as any
-                let track: any = undefined
-
-                // ROBUST TRACK FINDER STRATEGY
-                if (Array.isArray(tracksCollection)) {
-                    track = tracksCollection[0]
-                } else if (typeof tracksCollection.adapters === 'function') {
-                    // Standard Studio Adapter Collection
-                    const adapters = tracksCollection.adapters()
-                    track = Array.isArray(adapters) ? adapters[0] : undefined
-                } else if (typeof tracksCollection.values === 'function') {
-                    // Map-like or MobX-like
-                    const vals = tracksCollection.values()
-                    // Handle case where values() returns generic array instead of iterator
-                    if (Array.isArray(vals)) {
-                        track = vals[0]
-                    } else if (vals && typeof vals.next === 'function') {
-                        track = vals.next().value
-                    } else {
-                        // Fallback: try Array.from in case it is iterable
-                        try { track = Array.from(vals)[0] } catch (e) { }
-                    }
-                }
+                const track = this.findFirstTrack(adapter)
 
                 if (!track) return { success: false, reason: "No timeline track found on unit (Collection empty or unknown type)" }
 
@@ -1810,14 +1748,7 @@ export class OdieAppControl {
                 // 2. Find Target Region
                 // We use our helper findRegion (which expects PPQN)
                 // We need to look up the specific track lane (Values()[0]) usually
-                const tracksCollection = adapter.tracks as any
-                let track: any = undefined
-                if (Array.isArray(tracksCollection)) {
-                    track = tracksCollection[0]
-                } else if (typeof tracksCollection.values === 'function') {
-                    const vals = tracksCollection.values()
-                    track = Array.isArray(vals) ? vals[0] : Array.from(vals)[0]
-                }
+                const track = this.findFirstTrack(adapter)
 
                 if (!track) return { success: false, reason: "No track lane found." }
 
@@ -1887,6 +1818,27 @@ export class OdieAppControl {
     async listSoundfonts(): Promise<{ uuid: string, name: string }[]> {
         const assets = await (this.studio.soundfontService as any).collectAllFiles()
         return assets.map((a: any) => ({ uuid: a.uuid, name: a.name }))
+    }
+
+    /** Helper to robustly find the first track lane from an adapter */
+    private findFirstTrack(adapter: any): any | undefined {
+        const tracksCollection = adapter.tracks
+        if (!tracksCollection) return undefined
+
+        if (Array.isArray(tracksCollection)) return tracksCollection[0]
+
+        if (typeof tracksCollection.adapters === 'function') {
+            const adapters = tracksCollection.adapters()
+            return Array.isArray(adapters) ? adapters[0] : undefined
+        }
+
+        if (typeof tracksCollection.values === 'function') {
+            const vals = tracksCollection.values()
+            if (Array.isArray(vals)) return vals[0]
+            if (vals && typeof vals.next === 'function') return vals.next().value
+            try { return Array.from(vals as any)[0] } catch (e) { }
+        }
+        return undefined
     }
 
     /** Find an asset in the library using fuzzy/keyword matching */
